@@ -1,0 +1,259 @@
+"""
+app.py — Streamlit Verification & Review Dashboard
+
+Interactive web interface for logistics operators to:
+- Monitor pipeline statistics (Stage 1, Stage 3, and Reliability metrics)
+- Inspect flagged emails (MISMATCH and NEEDS_REVIEW)
+- Compare SI vs BL documents side-by-side with highlighted defects
+- Review unreadable, missing value, and wrong document escalations
+- Approve or reject edge cases with human-in-the-loop review state
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+import streamlit as st
+
+# Setup paths
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
+from pipeline.extractor_docs import extract_document
+from pipeline.comparator import CANONICAL_FIELDS, _normalize_text, _normalize_port
+
+st.set_page_config(
+    page_title="Shipping Document Verification Dashboard",
+    page_icon="🚢",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Custom Styling
+st.markdown("""
+<style>
+    .metric-card {
+        background: linear-gradient(135deg, #1e293b, #0f172a);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px;
+        text-align: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    .badge-mismatch {
+        background-color: #ef4444;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .badge-review {
+        background-color: #f59e0b;
+        color: black;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .badge-ok {
+        background-color: #10b981;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .diff-cell-bad {
+        background-color: rgba(239, 68, 68, 0.2);
+        border-left: 4px solid #ef4444;
+        padding: 8px;
+    }
+    .diff-cell-good {
+        background-color: rgba(16, 185, 129, 0.1);
+        border-left: 4px solid #10b981;
+        padding: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_data
+def load_data():
+    sub_path = ROOT_DIR / "submission.json"
+    inbox_dir = ROOT_DIR / "data" / "inbox"
+    if not sub_path.exists():
+        return {}, {}
+    with open(sub_path, encoding="utf-8") as f:
+        sub = json.load(f)
+
+    emails = {}
+    if inbox_dir.exists():
+        for p in inbox_dir.glob("email_*.json"):
+            eid = p.stem
+            with open(p, encoding="utf-8") as fp:
+                emails[eid] = json.load(fp)
+
+    return sub, emails
+
+
+submission, emails = load_data()
+
+if not submission:
+    st.error("No `submission.json` found. Please run `python run_pipeline.py` first.")
+    st.stop()
+
+# Initialize session state for operator reviews
+if "reviewed_items" not in st.session_state:
+    st.session_state.reviewed_items = {}
+
+# Sidebar filters
+st.sidebar.title("🚢 SDOC Verification")
+st.sidebar.markdown("Automated SI / BL comparison and routing")
+
+category_filter = st.sidebar.multiselect(
+    "Filter by Category",
+    options=["ALL", "BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM"],
+    default=["ALL"],
+)
+
+status_filter = st.sidebar.multiselect(
+    "Filter by Status",
+    options=["ALL", "MISMATCH", "NEEDS_REVIEW", "OK"],
+    default=["MISMATCH", "NEEDS_REVIEW"],
+)
+
+search_query = st.sidebar.text_input("Search Email ID or Subject", "")
+
+# Metrics row
+total = len(submission)
+mismatch_count = sum(1 for v in submission.values() if v.get("status") == "MISMATCH")
+review_count = sum(1 for v in submission.values() if v.get("status") == "NEEDS_REVIEW")
+ok_count = sum(1 for v in submission.values() if v.get("status") == "OK")
+reviewed_count = len(st.session_state.reviewed_items)
+
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Total Emails", total)
+col2.metric("Mismatches Flagged", mismatch_count, delta=f"{mismatch_count/total*100:.1f}%")
+col3.metric("Escalations (Review)", review_count, delta=f"{review_count/total*100:.1f}%")
+col4.metric("Clean (OK)", ok_count)
+col5.metric("Human Reviewed", f"{reviewed_count}/{mismatch_count + review_count}")
+
+st.markdown("---")
+
+# Filter logic
+filtered_eids = []
+for eid, v in submission.items():
+    cat = v.get("category", "")
+    st_val = v.get("status", "")
+
+    if "ALL" not in category_filter and cat not in category_filter:
+        continue
+    if "ALL" not in status_filter and st_val not in status_filter:
+        continue
+
+    em = emails.get(eid, {})
+    subj = em.get("subject", "")
+    if search_query:
+        q = search_query.lower()
+        if q not in eid.lower() and q not in subj.lower():
+            continue
+
+    filtered_eids.append(eid)
+
+st.subheader(f"Showing {len(filtered_eids)} emails matching filter")
+
+# Two-column layout: list on the left, details on the right
+left_col, right_col = st.columns([1, 2])
+
+with left_col:
+    selected_eid = st.selectbox(
+        "Select an email to inspect:",
+        options=filtered_eids,
+        format_func=lambda x: f"{x} - {submission[x].get('status')} [{submission[x].get('category')}]"
+    )
+
+    if selected_eid:
+        item = submission[selected_eid]
+        email_data = emails.get(selected_eid, {})
+        st.markdown(f"**From:** `{email_data.get('from', 'N/A')}`")
+        st.markdown(f"**Subject:** {email_data.get('subject', 'N/A')}")
+        st.markdown(f"**Category:** `{item.get('category')}`")
+
+        status = item.get("status")
+        if status == "MISMATCH":
+            st.markdown(f"<span class='badge-mismatch'>MISMATCH ({len(item.get('defect_fields', []))} defects)</span>", unsafe_allow_html=True)
+            st.markdown(f"**Defect Fields:** {', '.join(item.get('defect_fields', []))}")
+        elif status == "NEEDS_REVIEW":
+            st.markdown(f"<span class='badge-review'>NEEDS_REVIEW: {item.get('review_reason')}</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("<span class='badge-ok'>OK</span>", unsafe_allow_html=True)
+
+        is_reviewed = st.session_state.reviewed_items.get(selected_eid, False)
+        new_reviewed = st.checkbox("Mark as Reviewed by Operator", value=is_reviewed, key=f"rev_{selected_eid}")
+        st.session_state.reviewed_items[selected_eid] = new_reviewed
+
+with right_col:
+    if selected_eid:
+        item = submission[selected_eid]
+        email_data = emails.get(selected_eid, {})
+        atts = email_data.get("attachments", [])
+
+        st.markdown("### Document Inspection & Comparison")
+
+        tab1, tab2, tab3 = st.tabs(["Field Comparison", "Email Content", "Raw Attachments"])
+
+        with tab1:
+            if item.get("category") != "BL_COMPARISON":
+                st.info(f"This email was classified as `{item.get('category')}`. Document comparison is only performed on `BL_COMPARISON`.")
+            elif len(atts) < 2:
+                if item.get("status") == "NEEDS_REVIEW":
+                    st.warning(f"Escalated with reason: `{item.get('review_reason')}`. Fewer than 2 attachments provided.")
+                else:
+                    st.info("Draft BL request email (0 attachments). No comparison required.")
+            else:
+                # Extract attachments for side-by-side view
+                si_path = ROOT_DIR / "data" / atts[0]
+                bl_path = ROOT_DIR / "data" / atts[1]
+                if "_BL." in str(si_path) and "_SI." in str(bl_path):
+                    si_path, bl_path = bl_path, si_path
+
+                si_res = extract_document(str(si_path))
+                bl_res = extract_document(str(bl_path))
+
+                defects = set(item.get("defect_fields", []))
+
+                # Display table
+                rows = []
+                for f in CANONICAL_FIELDS:
+                    si_v = si_res.fields.get(f, "—")
+                    bl_v = bl_res.fields.get(f, "—")
+                    has_diff = f in defects
+                    diff_icon = "❌ MISMATCH" if has_diff else "✅ MATCH"
+                    rows.append({
+                        "Field": f.replace("_", " ").title(),
+                        "Shipping Instruction (SI)": si_v,
+                        "Bill of Lading (BL)": bl_v,
+                        "Status": diff_icon,
+                    })
+
+                st.table(rows)
+
+        with tab2:
+            st.markdown(f"**From:** {email_data.get('from')}")
+            st.markdown(f"**Subject:** {email_data.get('subject')}")
+            st.text_area("Body", email_data.get("body", ""), height=300)
+
+        with tab3:
+            if not atts:
+                st.write("No attachments.")
+            else:
+                for a in atts:
+                    att_file = ROOT_DIR / "data" / a
+                    st.markdown(f"#### `{a}` ({att_file.stat().st_size if att_file.exists() else 0} bytes)")
+                    if str(att_file).endswith(".txt") and att_file.exists():
+                        with open(att_file, encoding="utf-8", errors="replace") as fp:
+                            st.code(fp.read(), language="text")
+                    else:
+                        st.info(f"Binary attachment ({att_file.suffix}). Extracted via specialized parser.")
