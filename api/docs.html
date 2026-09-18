@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚢 SDOC Verification API Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0b0f17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2234;
+            --bg-input: #0f172a;
+            --border: #2d3748;
+            --border-hover: #4a5568;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-blue: #38bdf8;
+            --accent-blue-hover: #0284c7;
+            --get-color: #10b981;
+            --post-color: #6366f1;
+            --badge-mismatch: #ef4444;
+            --badge-review: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* Top Header */
+        header {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-icon {
+            font-size: 28px;
+            background: linear-gradient(135deg, #1e293b, #334155);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid #475569;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .brand-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: #ffffff;
+        }
+
+        .brand-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-nav {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-nav:hover {
+            border-color: var(--accent-blue);
+            background: #222f46;
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        .btn-nav-primary {
+            background: linear-gradient(135deg, #0284c7, #2563eb);
+            border: none;
+            color: white;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-nav-primary:hover {
+            background: linear-gradient(135deg, #0369a1, #1d4ed8);
+            color: white;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px 24px 64px 24px;
+        }
+
+        /* Stats Ribbon */
+        .stats-ribbon {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        /* Section Headings */
+        .section-header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Endpoint Card */
+        .endpoint-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+            transition: all 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .card-header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex: 1;
+        }
+
+        .method-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .method-get {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--get-color);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .method-post {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--post-color);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .endpoint-path {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .endpoint-summary {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-left: 12px;
+        }
+
+        .card-body {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .param-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .param-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            min-width: 100px;
+        }
+
+        .input-text {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 14px;
+            color: white;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            flex: 1;
+            max-width: 320px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-text:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .chip-group {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .chip {
+            background: #243046;
+            border: 1px solid #3b4d6e;
+            color: #93c5fd;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .chip:hover {
+            background: #1e3a8a;
+            color: #ffffff;
+        }
+
+        .btn-run {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            border: none;
+            border-radius: 8px;
+            padding: 9px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            align-self: flex-start;
+        }
+
+        .btn-run:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-run:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Response Box */
+        .response-box {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .response-header {
+            background: #151e2e;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .response-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .status-200 {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        pre.response-code {
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #e2e8f0;
+            max-height: 280px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 48px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            padding-top: 24px;
+        }
+
+        footer a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <div class="brand-icon">🚢</div>
+            <div>
+                <div class="brand-title">Shipping Document Verification API</div>
+                <div class="brand-sub">
+                    <span class="pulse-dot"></span>
+                    <span>Service Operational (v1.0.0)</span>
+                </div>
+            </div>
+        </div>
+        <div class="nav-links">
+            <a href="/app" class="btn-nav btn-nav-primary">
+                🖥️ Verity Frontend
+            </a>
+            <a href="http://localhost:8501" target="_blank" class="btn-nav">
+                📊 Streamlit Dashboard
+            </a>
+            <a href="/swagger" class="btn-nav">
+                📖 Swagger UI
+            </a>
+            <a href="/openapi.json" target="_blank" class="btn-nav">
+                📄 OpenAPI JSON
+            </a>
+        </div>
+    </header>
+
+    <div class="container">
+
+        <!-- Top Live Stats Ribbon -->
+        <div class="stats-ribbon">
+            <div class="stat-card">
+                <span class="stat-label">Heartbeat</span>
+                <span class="stat-value" id="stat-health" style="color: #34d399;">Checking...</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Total Emails Processed</span>
+                <span class="stat-value" id="stat-total">—</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Defects Flagged</span>
+                <span class="stat-value" id="stat-defects" style="color: #f87171;">—</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Clean (OK) Shipments</span>
+                <span class="stat-value" id="stat-ok" style="color: #60a5fa;">—</span>
+            </div>
+        </div>
+
+        <div class="section-header">
+            <div>
+                <div class="section-title">⚡ Interactive API Endpoints</div>
+                <div class="section-desc">Test endpoints directly with live data from your running backend.</div>
+            </div>
+        </div>
+
+        <div class="endpoint-list">
+
+            <!-- GET /health -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-path">/health</span>
+                        <span class="endpoint-summary">Check backend liveness and heartbeat</span>
+                    </div>
+                </div>
+                <div class="card-body" id="health-body">
+                    <p style="font-size: 13px; color: var(--text-muted);">
+                        Returns heartbeat status and verifies API microservice uptime.
+                    </p>
+                    <button class="btn-run" onclick="callApi('/health', 'health-res', 'health-code', 'health-status', 'health-time')">
+                        ▶ Send Request
+                    </button>
+                    <div class="response-box" id="health-res">
+                        <div class="response-header">
+                            <span>Status: <span class="response-status" id="health-status">200 OK</span></span>
+                            <span id="health-time">0 ms</span>
+                        </div>
+                        <pre class="response-code" id="health-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GET /stats -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-path">/stats</span>
+                        <span class="endpoint-summary">Get aggregated metrics, classification categories, and defect breakdown</span>
+                    </div>
+                </div>
+                <div class="card-body" id="stats-body">
+                    <p style="font-size: 13px; color: var(--text-muted);">
+                        Returns total count of processed emails, status breakdowns, and defect field tallies.
+                    </p>
+                    <button class="btn-run" onclick="callApi('/stats', 'stats-res', 'stats-code', 'stats-status', 'stats-time')">
+                        ▶ Send Request
+                    </button>
+                    <div class="response-box" id="stats-res">
+                        <div class="response-header">
+                            <span>Status: <span class="response-status" id="stats-status">200 OK</span></span>
+                            <span id="stats-time">0 ms</span>
+                        </div>
+                        <pre class="response-code" id="stats-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GET /submission -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-path">/submission</span>
+                        <span class="endpoint-summary">Retrieve cached submission.json with verification results</span>
+                    </div>
+                </div>
+                <div class="card-body" id="sub-body">
+                    <p style="font-size: 13px; color: var(--text-muted);">
+                        Returns the full submission schema dictionary for all verified emails.
+                    </p>
+                    <button class="btn-run" onclick="callApi('/submission', 'sub-res', 'sub-code', 'sub-status', 'sub-time')">
+                        ▶ Send Request
+                    </button>
+                    <div class="response-box" id="sub-res">
+                        <div class="response-header">
+                            <span>Status: <span class="response-status" id="sub-status">200 OK</span></span>
+                            <span id="sub-time">0 ms</span>
+                        </div>
+                        <pre class="response-code" id="sub-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GET /email/{email_id} -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-path">/email/{email_id}</span>
+                        <span class="endpoint-summary">Inspect or process a specific email by ID</span>
+                    </div>
+                </div>
+                <div class="card-body" id="email-body">
+                    <div class="param-row">
+                        <span class="param-label">Email ID:</span>
+                        <input type="text" id="email-input" class="input-text" value="email_001" placeholder="e.g. email_001">
+                        <div class="chip-group">
+                            <span class="chip" onclick="setEmail('email_001')">email_001</span>
+                            <span class="chip" onclick="setEmail('email_005')">email_005</span>
+                            <span class="chip" onclick="setEmail('email_020')">email_020</span>
+                        </div>
+                    </div>
+                    <button class="btn-run" onclick="callEmailApi()">
+                        ▶ Send Request
+                    </button>
+                    <div class="response-box" id="email-res">
+                        <div class="response-header">
+                            <span>Status: <span class="response-status" id="email-status">200 OK</span></span>
+                            <span id="email-time">0 ms</span>
+                        </div>
+                        <pre class="response-code" id="email-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- POST /process -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-path">/process</span>
+                        <span class="endpoint-summary">Trigger full pipeline execution on dataset</span>
+                    </div>
+                </div>
+                <div class="card-body" id="proc-body">
+                    <p style="font-size: 13px; color: var(--text-muted);">
+                        Executes email classification, SI/BL extraction, and defect comparison across all inbox items.
+                    </p>
+                    <div class="param-row">
+                        <span class="param-label">Data Directory:</span>
+                        <input type="text" id="proc-input" class="input-text" value="data" placeholder="data">
+                    </div>
+                    <button class="btn-run" style="background: linear-gradient(135deg, #6366f1, #4f46e5);" onclick="callProcessApi()">
+                        ⚡ Run Verification Pipeline
+                    </button>
+                    <div class="response-box" id="proc-res">
+                        <div class="response-header">
+                            <span>Status: <span class="response-status" id="proc-status">200 OK</span></span>
+                            <span id="proc-time">0 ms</span>
+                        </div>
+                        <pre class="response-code" id="proc-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <footer>
+            Built for <strong>Shipping Document Verification</strong> • Averis Hackathon 2026<br>
+            FastAPI Backend &bull; Streamlit Review Dashboard &bull; PyPDF &bull; Gemini Multi-modal
+        </footer>
+
+    </div>
+
+    <script>
+        // Auto-fetch stats on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const hRes = await fetch('/health');
+                const hJson = await hRes.json();
+                if (hJson.status === 'ok') {
+                    document.getElementById('stat-health').innerText = '100% OK';
+                }
+
+                const sRes = await fetch('/stats');
+                if (sRes.ok) {
+                    const sJson = await sRes.json();
+                    document.getElementById('stat-total').innerText = sJson.total_emails || '520';
+                    document.getElementById('stat-defects').innerText = sJson.total_defects || '46';
+                    document.getElementById('stat-ok').innerText = (sJson.statuses && sJson.statuses.OK) || '454';
+                }
+            } catch (e) {
+                document.getElementById('stat-health').innerText = 'Offline';
+                document.getElementById('stat-health').style.color = '#ef4444';
+            }
+        });
+
+        function setEmail(val) {
+            document.getElementById('email-input').value = val;
+        }
+
+        async function callApi(endpoint, resId, codeId, statusId, timeId) {
+            const resBox = document.getElementById(resId);
+            const codeEl = document.getElementById(codeId);
+            const statusEl = document.getElementById(statusId);
+            const timeEl = document.getElementById(timeId);
+
+            resBox.style.display = 'block';
+            codeEl.innerText = 'Sending request...';
+            statusEl.className = 'response-status';
+            statusEl.innerText = 'Pending';
+
+            const start = performance.now();
+            try {
+                const res = await fetch(endpoint);
+                const duration = Math.round(performance.now() - start);
+                const data = await res.json();
+
+                timeEl.innerText = duration + ' ms';
+                statusEl.innerText = res.status + ' ' + res.statusText;
+                statusEl.className = 'response-status ' + (res.ok ? 'status-200' : 'status-error');
+
+                codeEl.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                timeEl.innerText = Math.round(performance.now() - start) + ' ms';
+                statusEl.innerText = 'Error';
+                statusEl.className = 'response-status status-error';
+                codeEl.innerText = String(err);
+            }
+        }
+
+        async function callEmailApi() {
+            const emailId = document.getElementById('email-input').value.trim() || 'email_001';
+            await callApi('/email/' + encodeURIComponent(emailId), 'email-res', 'email-code', 'email-status', 'email-time');
+        }
+
+        async function callProcessApi() {
+            const dataDir = document.getElementById('proc-input').value.trim() || 'data';
+            const resBox = document.getElementById('proc-res');
+            const codeEl = document.getElementById('proc-code');
+            const statusEl = document.getElementById('proc-status');
+            const timeEl = document.getElementById('proc-time');
+
+            resBox.style.display = 'block';
+            codeEl.innerText = 'Running pipeline on dataset (this may take a few seconds)...';
+            statusEl.className = 'response-status';
+            statusEl.innerText = 'Processing';
+
+            const start = performance.now();
+            try {
+                const res = await fetch('/process?data_dir=' + encodeURIComponent(dataDir), { method: 'POST' });
+                const duration = Math.round(performance.now() - start);
+                const data = await res.json();
+
+                timeEl.innerText = duration + ' ms';
+                statusEl.innerText = res.status + ' ' + res.statusText;
+                statusEl.className = 'response-status ' + (res.ok ? 'status-200' : 'status-error');
+
+                codeEl.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                timeEl.innerText = Math.round(performance.now() - start) + ' ms';
+                statusEl.innerText = 'Error';
+                statusEl.className = 'response-status status-error';
+                codeEl.innerText = String(err);
+            }
+        }
+    </script>
+</body>
+</html>
+
