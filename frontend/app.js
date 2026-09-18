@@ -82,6 +82,7 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
   const titleCase = (value = "") => value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+  const displaySubject = (value = "") => String(value).replace(/_+/g, " ").replace(/\s+/g, " ").trim();
   const formatId = (id = "") => id.toUpperCase();
   const percent = (value, total) => total ? `${(value / total * 100).toFixed(1)}%` : "0.0%";
   const statusClass = status => status === "MISMATCH" ? "mismatch" : status === "NEEDS_REVIEW" ? "review" : "ok";
@@ -253,14 +254,14 @@
       return;
     }
 
-    queue.innerHTML = shown.map(id => {
+    queue.innerHTML = shown.map((id, index) => {
       const item = state.submission[id];
       const email = state.emails.get(id);
       const cls = statusClass(item.status);
       const secondary = item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason) : titleCase(item.category);
-      return `<button class="queue-item ${cls} ${id === state.selectedId ? "active" : ""}" type="button" data-email-id="${escapeHtml(id)}">
+      return `<button class="queue-item ${cls} ${id === state.selectedId ? "active" : ""}" style="--item-index:${index}" type="button" data-email-id="${escapeHtml(id)}">
         <div class="queue-item-top"><strong>${escapeHtml(formatId(id))}</strong><span class="status-chip ${cls}">${statusLabel(item.status)}</span></div>
-        <p class="queue-subject">${escapeHtml(email?.subject || titleCase(item.category))}</p>
+        <p class="queue-subject" title="${escapeHtml(email?.subject || "")}">${escapeHtml(displaySubject(email?.subject) || titleCase(item.category))}</p>
         <div class="queue-item-bottom"><span>${escapeHtml(email?.from || secondary)}</span><span>${item.defect_fields?.length ? `${item.defect_fields.length} issue${item.defect_fields.length > 1 ? "s" : ""}` : secondary}</span></div>
       </button>`;
     }).join("");
@@ -342,7 +343,8 @@
     orb.innerHTML = item.status === "OK" ? '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>' : item.status === "NEEDS_REVIEW" ? '<svg viewBox="0 0 24 24"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="9"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M12 8v5m0 4h.01"/><circle cx="12" cy="12" r="9"/></svg>';
     $("#selectedId").textContent = formatId(emailId);
     $("#selectedCategory").textContent = titleCase(item.category);
-    $("#selectedSubject").textContent = email.subject || formatId(emailId);
+    $("#selectedSubject").textContent = displaySubject(email.subject) || formatId(emailId);
+    $("#selectedSubject").title = email.subject || formatId(emailId);
     $("#summaryBanner").className = `summary-banner ${cls}`;
     $("#summaryTitle").textContent = copy.title;
     $("#summaryText").textContent = copy.text;
@@ -385,6 +387,41 @@
     localStorage.setItem("sdoc-theme", theme);
   }
 
+  function moveNavSelection(button = $(".nav-item.active")) {
+    const nav = $(".primary-nav");
+    const selection = $("#navSelection");
+    if (!nav || !selection || !button) return;
+    const navRect = nav.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    selection.style.height = `${buttonRect.height}px`;
+    selection.style.transform = `translate3d(0, ${buttonRect.top - navRect.top}px, 0)`;
+  }
+
+  function setActiveNav(button) {
+    if (!button) return;
+    $$(".nav-item[data-nav]").forEach(item => item.classList.toggle("active", item === button));
+    requestAnimationFrame(() => moveNavSelection(button));
+  }
+
+  function syncSidebarButton() {
+    const collapsed = $(".app-shell").classList.contains("sidebar-collapsed");
+    const trigger = $("#openSidebar");
+    trigger.setAttribute("aria-expanded", String(!collapsed));
+    trigger.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
+  }
+
+  function toggleSidebar() {
+    if (window.matchMedia("(max-width: 960px)").matches) {
+      openSidebar();
+      return;
+    }
+    const shell = $(".app-shell");
+    shell.classList.toggle("sidebar-collapsed");
+    localStorage.setItem("sdoc-sidebar-collapsed", String(shell.classList.contains("sidebar-collapsed")));
+    syncSidebarButton();
+    setTimeout(() => moveNavSelection(), 760);
+  }
+
   function bindEvents() {
     $("#themeToggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
     $("#refreshButton").addEventListener("click", refreshData);
@@ -401,16 +438,21 @@
       $$("#statusFilters button").forEach(item => item.classList.toggle("active", item === button));
       state.statusFilter = button.dataset.status;
       state.visibleCount = 20;
+      const navName = button.dataset.status === "OK" ? "verified" : "overview";
+      setActiveNav($(`.nav-item[data-nav="${navName}"]`));
       renderQueue();
     }));
     $$(".tab-bar button").forEach(button => button.addEventListener("click", () => setTab(button.dataset.tab)));
-    $$(".nav-item[data-focus-status]").forEach(button => button.addEventListener("click", () => {
-      const status = button.dataset.focusStatus;
+    $$(".nav-item[data-nav]").forEach(button => button.addEventListener("click", () => {
+      const status = button.dataset.focusStatus || "FLAGGED";
+      setActiveNav(button);
       state.statusFilter = status;
-      $$("#statusFilters button").forEach(item => item.classList.toggle("active", item.dataset.status === (status === "MISMATCH" || status === "NEEDS_REVIEW" ? "FLAGGED" : status)));
+      state.visibleCount = 20;
+      $$("#statusFilters button").forEach(item => item.classList.toggle("active", item.dataset.status === (["MISMATCH", "NEEDS_REVIEW"].includes(status) ? "FLAGGED" : status)));
       renderQueue();
-      const first = filteredIds().find(id => state.submission[id].status === status);
+      const first = filteredIds().find(id => status === "FLAGGED" || state.submission[id].status === status);
       if (first) selectEmail(first);
+      if (window.matchMedia("(max-width: 960px)").matches) closeSidebar();
     }));
 
     document.addEventListener("keydown", event => {
@@ -441,9 +483,10 @@
       if (!event.target.closest("#morePopover") && !event.target.closest("#moreButton")) $("#morePopover").hidden = true;
     });
 
-    $("#openSidebar").addEventListener("click", openSidebar);
+    $("#openSidebar").addEventListener("click", toggleSidebar);
     $("#closeSidebar").addEventListener("click", closeSidebar);
     $("#mobileScrim").addEventListener("click", closeSidebar);
+    window.addEventListener("resize", () => requestAnimationFrame(() => moveNavSelection()));
   }
 
   function openSidebar() { $("#sidebar").classList.add("open"); $("#mobileScrim").classList.add("visible"); }
@@ -493,7 +536,12 @@
     const savedTheme = localStorage.getItem("sdoc-theme");
     const preferred = window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
     setTheme(savedTheme || preferred);
+    if (localStorage.getItem("sdoc-sidebar-collapsed") === "true" && !window.matchMedia("(max-width: 960px)").matches) {
+      $(".app-shell").classList.add("sidebar-collapsed");
+    }
     bindEvents();
+    syncSidebarButton();
+    requestAnimationFrame(() => moveNavSelection());
     state.submission = await loadSubmission();
     state.stats = computeStats(state.submission);
     if (!state.submission[state.selectedId]) state.selectedId = Object.keys(state.submission)[0];
