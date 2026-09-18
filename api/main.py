@@ -14,18 +14,28 @@ import json
 import logging
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from pipeline.runner import run_pipeline, process_email
 from data.loader import Inbox
 
 logger = logging.getLogger(__name__)
 
+DOCS_HTML_FILE = Path(__file__).resolve().parent / "docs.html"
+
 app = FastAPI(
     title="Shipping Document Verification API",
     description="Automated email classification and SI/BL document verification pipeline",
     version="1.0.0",
+    docs_url="/swagger",
+    redoc_url="/redoc",
 )
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = ROOT_DIR / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
 DATA_DIR = os.environ.get("SDOC_DATA_DIR", "data")
 SUBMISSION_FILE = os.environ.get("SDOC_SUBMISSION_FILE", "submission.json")
@@ -38,10 +48,21 @@ def _get_submission() -> dict:
     return {}
 
 
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+def docs_ui():
+    """Interactive visual API documentation portal."""
+    if DOCS_HTML_FILE.exists():
+        return HTMLResponse(content=DOCS_HTML_FILE.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>API Docs</h1><p>docs.html not found.</p>")
+
+
+
 @app.get("/health")
 def health_check():
     """Liveness check endpoint."""
     return {"status": "ok", "service": "sdoc-verification-api", "version": "1.0.0"}
+
 
 
 @app.post("/process")
@@ -137,3 +158,9 @@ def get_stats():
         "total_defects": total_defects,
         "defect_fields_breakdown": defect_fields,
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("api.main:app", host="127.0.0.1", port=8080, reload=True)
+
