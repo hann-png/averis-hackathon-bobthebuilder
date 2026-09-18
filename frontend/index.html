@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Shipping document verification and human review dashboard">
+  <meta name="color-scheme" content="dark light">
+  <title>Verity — Shipping Document Verification</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar glass-panel" id="sidebar">
+      <div class="brand-row">
+        <a class="brand" href="#" aria-label="Verity home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img"><path d="M5.8 7.5h12.4l1.6 8.2a2 2 0 0 1-2 2.4H6.2a2 2 0 0 1-2-2.4l1.6-8.2Z"/><path d="M9 7.5V5.7A3 3 0 0 1 12 3a3 3 0 0 1 3 2.7v1.8M8.5 12h7M8.5 15h4"/></svg>
+          </span>
+          <span><strong>Verity</strong><small>Document intelligence</small></span>
+        </a>
+        <button class="icon-button mobile-only" id="closeSidebar" aria-label="Close menu">
+          <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <button class="nav-item active" type="button">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" type="button" data-focus-status="MISMATCH">
+          <svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg>
+          <span>Mismatches</span><span class="nav-count" id="navMismatchCount">46</span>
+        </button>
+        <button class="nav-item" type="button" data-focus-status="NEEDS_REVIEW">
+          <svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M9.5 9a2.7 2.7 0 1 1 4.6 2c-1.4 1.1-2.1 1.6-2.1 3M12 18h.01"/></svg>
+          <span>Review queue</span><span class="nav-count amber" id="navReviewCount">20</span>
+        </button>
+        <button class="nav-item" type="button" data-focus-status="OK">
+          <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>Verified</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-section">
+        <p class="section-label">Workflow</p>
+        <div class="pipeline-card">
+          <div class="pipeline-head">
+            <span class="live-dot"></span>
+            <span>Pipeline active</span>
+            <strong>100%</strong>
+          </div>
+          <div class="progress-track"><span></span></div>
+          <p>520 of 520 emails processed</p>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="service-state">
+          <span class="service-icon">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </span>
+          <span><small>Data source</small><strong id="dataSourceLabel">Connecting...</strong></span>
+          <span class="connection-dot" id="connectionDot"></span>
+        </div>
+        <p>Verification engine v1.0</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-title">
+          <button class="icon-button mobile-only" id="openSidebar" aria-label="Open menu">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div>
+            <p class="eyebrow">Operations workspace</p>
+            <h1>Verification center</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div class="sync-state desktop-only"><span></span><span><small>Last sync</small><strong id="lastSync">Just now</strong></span></div>
+          <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh data" title="Refresh data">
+            <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5l2-2.5"/></svg>
+          </button>
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch color theme">
+            <span class="theme-knob">
+              <svg class="sun-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              <svg class="moon-icon" viewBox="0 0 24 24"><path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.6 8.5 8.5 0 1 0 20.5 15.5Z"/></svg>
+            </span>
+          </button>
+          <div class="avatar" aria-label="Operator profile">OP</div>
+        </div>
+      </header>
+
+      <section class="stats-grid" aria-label="Verification statistics">
+        <article class="stat-card glass-panel reveal" style="--delay: 0ms">
+          <div class="stat-top"><span>Total emails</span><span class="stat-icon neutral"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg></span></div>
+          <div class="stat-value" id="totalStat">520</div>
+          <p>Complete dataset</p>
+        </article>
+        <article class="stat-card glass-panel reveal" style="--delay: 60ms">
+          <div class="stat-top"><span>Mismatches</span><span class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg></span></div>
+          <div class="stat-value" id="mismatchStat">46</div>
+          <p><span class="trend red" id="mismatchRate">8.8%</span> of all emails</p>
+        </article>
+        <article class="stat-card glass-panel reveal" style="--delay: 120ms">
+          <div class="stat-top"><span>Needs review</span><span class="stat-icon amber"><svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M12 8v4m0 4h.01"/></svg></span></div>
+          <div class="stat-value" id="reviewStat">20</div>
+          <p><span class="trend amber" id="reviewRate">3.8%</span> escalated safely</p>
+        </article>
+        <article class="stat-card glass-panel reveal" style="--delay: 180ms">
+          <div class="stat-top"><span>Verified clean</span><span class="stat-icon green"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+          <div class="stat-value" id="cleanStat">454</div>
+          <p><span class="trend green" id="cleanRate">87.3%</span> cleared automatically</p>
+        </article>
+      </section>
+
+      <section class="workspace-grid">
+        <aside class="queue-panel glass-panel reveal" style="--delay: 230ms">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Inbox</p><h2>Review queue</h2></div>
+            <span class="result-count" id="resultCount">66 cases</span>
+          </div>
+
+          <div class="search-field">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+            <input id="searchInput" type="search" autocomplete="off" placeholder="Search email ID or subject">
+            <kbd>⌘ K</kbd>
+          </div>
+
+          <div class="filter-row">
+            <div class="segmented-control" id="statusFilters" role="group" aria-label="Status filter">
+              <button type="button" class="active" data-status="FLAGGED">Flagged</button>
+              <button type="button" data-status="ALL">All</button>
+              <button type="button" data-status="OK">Clean</button>
+            </div>
+            <label class="select-shell" aria-label="Category filter">
+              <select id="categoryFilter">
+                <option value="ALL">All categories</option>
+                <option value="BL_COMPARISON">BL comparison</option>
+                <option value="SI_REQUEST">SI request</option>
+                <option value="INVOICE_QUERY">Invoice query</option>
+                <option value="GENERAL">General</option>
+                <option value="SPAM">Spam</option>
+              </select>
+              <svg viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></svg>
+            </label>
+          </div>
+
+          <div class="queue-list" id="queueList" aria-live="polite"></div>
+          <div class="queue-footer">
+            <span id="queueRange">Showing 1–20</span>
+            <button class="text-button" id="loadMoreButton" type="button">Load more</button>
+          </div>
+        </aside>
+
+        <section class="detail-panel glass-panel reveal" style="--delay: 280ms" aria-live="polite">
+          <div class="detail-header">
+            <div class="detail-title-wrap">
+              <div class="status-orb mismatch" id="statusOrb"><svg viewBox="0 0 24 24"><path d="M12 8v5m0 4h.01"/><circle cx="12" cy="12" r="9"/></svg></div>
+              <div>
+                <div class="detail-meta-line"><span id="selectedId">EMAIL_004</span><span class="dot-separator"></span><span id="selectedCategory">BL comparison</span></div>
+                <h2 id="selectedSubject">Request BL draft — PO 26067</h2>
+              </div>
+            </div>
+            <div class="detail-actions">
+              <button class="secondary-button" id="retryButton" type="button">
+                <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5l2-2.5"/></svg>
+                Retry
+              </button>
+              <button class="primary-button" id="reviewedButton" type="button">
+                <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+                <span>Mark reviewed</span>
+              </button>
+              <button class="icon-button" id="moreButton" type="button" aria-label="More actions"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="summary-banner mismatch" id="summaryBanner">
+            <div class="summary-icon"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg></div>
+            <div><strong id="summaryTitle">2 discrepancies detected</strong><p id="summaryText">Consignee and notify party require attention before this draft is finalized.</p></div>
+            <span class="confidence-pill">High confidence</span>
+          </div>
+
+          <div class="tab-bar" role="tablist" aria-label="Document details">
+            <button type="button" role="tab" class="active" data-tab="comparison">Field comparison <span id="comparisonTabCount">2</span></button>
+            <button type="button" role="tab" data-tab="email">Email content</button>
+            <button type="button" role="tab" data-tab="attachments">Attachments <span id="attachmentTabCount">2</span></button>
+            <button type="button" role="tab" data-tab="audit">Audit trail</button>
+          </div>
+
+          <div class="tab-content active" id="comparisonTab" data-panel="comparison">
+            <div class="comparison-head">
+              <div><p class="eyebrow">Document comparison</p><h3>Shipping instruction vs. Bill of Lading</h3></div>
+              <div class="legend"><span><i class="match"></i>Match</span><span><i class="mismatch"></i>Mismatch</span></div>
+            </div>
+            <div class="comparison-table" id="comparisonTable"></div>
+          </div>
+
+          <div class="tab-content" id="emailTab" data-panel="email">
+            <div class="email-card">
+              <div class="email-header-row"><span>From</span><strong id="emailFrom">docs@vitalsolutions.sg</strong></div>
+              <div class="email-header-row"><span>Subject</span><strong id="emailSubject">Request BL draft</strong></div>
+              <div class="email-body" id="emailBody"></div>
+            </div>
+          </div>
+
+          <div class="tab-content" id="attachmentsTab" data-panel="attachments">
+            <div class="attachment-grid" id="attachmentGrid"></div>
+          </div>
+
+          <div class="tab-content" id="auditTab" data-panel="audit">
+            <div class="timeline" id="auditTimeline"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="popover glass-panel" id="morePopover" hidden>
+    <button type="button" id="copyIdButton"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copy email ID</button>
+    <button type="button" id="exportButton"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>Export result</button>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-icon"></span><span id="toastText">Updated</span></div>
+  <div class="mobile-scrim" id="mobileScrim"></div>
+
+  <script>
+    window.SDOC_CONFIG = {
+      apiBase: "http://localhost:8080",
+      dataBase: "../data",
+      submissionPath: "../submission.json"
+    };
+  </script>
+  <script src="./app.js"></script>
+</body>
+</html>
