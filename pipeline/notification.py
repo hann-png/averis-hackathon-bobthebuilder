@@ -33,7 +33,7 @@ FIELD_DISPLAY_NAMES = {
 
 
 # Local folder where generated emails are stored during testing.
-LOCAL_EMAIL_DIR = Path("generated_emails")
+LOCAL_EMAIL_DIR = Path("testing_generated_emails")
 
 
 def should_send_auto_email(
@@ -475,3 +475,103 @@ def process_mismatch_notification(
         )
 
     return response
+
+#Run a local test when this script is executed directly.
+def run_local_test():
+    """
+    Run a standalone local test without:
+    - runner.py
+    - main application
+    - Docker
+    - SMTP
+    - external services
+    """
+
+    print("=" * 60)
+    print("BOB NOTIFICATION LOCAL TEST")
+    print("=" * 60)
+
+    email_data = {
+        "sender": "test.sender@example.com",
+        "subject": "Shipping Instruction and Bill of Lading",
+    }
+
+    result = {
+        "status": "MISMATCH",
+        "defect_fields": [
+            "port_of_discharge",
+            "gross_weight_kg",
+        ],
+    }
+
+    si_fields = {
+        "port_of_discharge": "Port Klang",
+        "gross_weight_kg": "12500",
+    }
+
+    bl_fields = {
+        "port_of_discharge": "Singapore",
+        "gross_weight_kg": "12750",
+    }
+
+    print("\n[TEST 1] Auto email ENABLED")
+    print("-" * 60)
+
+    response = process_mismatch_notification(
+        auto_email_enabled=True,
+        email_id="LOCAL_TEST_001",
+        email_data=email_data,
+        result=result,
+        si_fields=si_fields,
+        bl_fields=bl_fields,
+        local_check=True,
+        actually_send=False,
+    )
+
+    print(response)
+
+    print("\n[TEST 2] Auto email DISABLED")
+    print("-" * 60)
+
+    response_disabled = process_mismatch_notification(
+        auto_email_enabled=False,
+        email_id="LOCAL_TEST_002",
+        email_data=email_data,
+        result=result,
+        si_fields=si_fields,
+        bl_fields=bl_fields,
+        local_check=True,
+        actually_send=False,
+    )
+
+    print(response_disabled)
+
+    print("\n[TEST 3] No mismatch")
+    print("-" * 60)
+
+    no_mismatch_result = {
+        "status": "OK",
+        "defect_fields": [],
+    }
+
+    response_no_mismatch = process_mismatch_notification(
+        auto_email_enabled=True,
+        email_id="LOCAL_TEST_003",
+        email_data=email_data,
+        result=no_mismatch_result,
+        si_fields=si_fields,
+        bl_fields=bl_fields,
+        local_check=True,
+        actually_send=False,
+    )
+
+    print(response_no_mismatch)
+
+    print("\n" + "=" * 60)
+    print("LOCAL TEST COMPLETED")
+    print("=" * 60)
+    print("\nCheck the generated_emails folder for the test email.")
+
+
+if __name__ == "__main__":
+    run_local_test()
