@@ -98,6 +98,12 @@ def load_data():
     return sub, emails
 
 
+
+@st.cache_data
+def get_mismatch_explanation(si_fields: dict, bl_fields: dict, defect_fields: tuple) -> str:
+    from pipeline.explainer import explain_mismatch
+    return explain_mismatch(si_fields, bl_fields, list(defect_fields))
+
 submission, emails = load_data()
 
 if not submission:
@@ -223,6 +229,24 @@ with right_col:
                 bl_res = extract_document(str(bl_path))
 
                 defects = set(item.get("defect_fields", []))
+
+                # Display Gemini-generated Mismatch Explanation next to comparison
+                if defects:
+                    explanation = get_mismatch_explanation(si_res.fields, bl_res.fields, tuple(sorted(list(defects))))
+                    st.markdown(
+                        f'''<div style="background-color: rgba(239, 68, 68, 0.15); border-left: 5px solid #ef4444; border-radius: 8px; padding: 14px 16px; margin-bottom: 18px;">
+                            <h4 style="margin: 0 0 6px 0; color: #ef4444;">?? AI Discrepancy Explanation</h4>
+                            <p style="margin: 0; font-size: 15px; color: #f8fafc;">{explanation}</p>
+                        </div>''',
+                        unsafe_allow_html=True
+                    )
+
+                # Show extraction disagreement alert if present
+                if getattr(si_res, "has_disagreement", False) or getattr(bl_res, "has_disagreement", False):
+                    conflict_fields = list(set(getattr(si_res, "disagreement_fields", []) + getattr(bl_res, "disagreement_fields", [])))
+                    if conflict_fields:
+                        st.warning(f"?? **Extraction Discrepancy Detected:** AI and rules extractors differed on: {', '.join(conflict_fields)}")
+
 
                 # Display table
                 rows = []
