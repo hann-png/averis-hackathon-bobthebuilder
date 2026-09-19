@@ -4,6 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg?logo=streamlit)](https://streamlit.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Railway-0B0D0E.svg?logo=railway)](https://averis-hackathon-bobthebuilder-production.up.railway.app)
 
 An end-to-end intelligent automation system built for the **Shipping Document Verification** hackathon. It classifies logistics emails, extracts canonical fields from multi-format Shipping Instructions (SI) and Bills of Lading (BL) (`.txt`, `.pdf`, `.docx`, `.xlsx`), identifies field discrepancies with zero false alarms, generates human-readable AI discrepancy explanations, and reliably escalates edge-case exceptions for human review.
 
@@ -11,11 +12,12 @@ An end-to-end intelligent automation system built for the **Shipping Document Ve
 
 ## ?? Live Prototype & Service Links
 
-> ?? **Live Prototype URL**: `https://sdoc-verification-service-placeholder.run.app` *(Replace with deployed URL)*
+> ?? **Live Prototype URL**: [https://averis-hackathon-bobthebuilder-production.up.railway.app](https://averis-hackathon-bobthebuilder-production.up.railway.app)
 >
-> - **Interactive API Documentation Portal**: `/docs`
-> - **Operator Web Interface**: `/app`
-> - **Swagger UI**: `/swagger`
+> - ?? **Interactive API Documentation Portal**: [https://averis-hackathon-bobthebuilder-production.up.railway.app/docs](https://averis-hackathon-bobthebuilder-production.up.railway.app/docs)
+> - ??? **Operator Web Interface**: [https://averis-hackathon-bobthebuilder-production.up.railway.app/app](https://averis-hackathon-bobthebuilder-production.up.railway.app/app)
+> - ? **Swagger UI**: [https://averis-hackathon-bobthebuilder-production.up.railway.app/swagger](https://averis-hackathon-bobthebuilder-production.up.railway.app/swagger)
+> - ?? **Health Check**: [https://averis-hackathon-bobthebuilder-production.up.railway.app/health](https://averis-hackathon-bobthebuilder-production.up.railway.app/health)
 
 ---
 
