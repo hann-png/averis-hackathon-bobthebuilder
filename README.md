@@ -4,30 +4,36 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg?logo=streamlit)](https://streamlit.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Final Score](https://img.shields.io/badge/Official_Score-1.0000_(100%25)-success.svg)](#-official-benchmark-results)
 
 An end-to-end intelligent automation system built for the **Shipping Document Verification** hackathon. It classifies logistics emails, extracts canonical fields from multi-format Shipping Instructions (SI) and Bills of Lading (BL) (`.txt`, `.pdf`, `.docx`, `.xlsx`), identifies field discrepancies with zero false alarms, and reliably flags edge-case exceptions for human review.
 
 ---
 
-## 🏆 Official Benchmark Results
+## Validation & Self-Evaluation
 
-Evaluated against the official competition scoring formula:
-$$\text{Final Score} = 0.30 \times \text{Stage 1 Macro F1} + 0.20 \times \text{Stage 3 Defect F1} + 0.50 \times \text{End-to-End Rate}$$
+To evaluate your generated `submission.json` against the competition criteria without requiring private ground-truth files, validate results using the official hackathon evaluation server.
 
-| Evaluation Metric | Score | Details |
-|---|---|---|
-| **Overall Final Score** | **1.0000 (100.0%)** | **Maximum theoretical score achieved** |
-| **Stage 1 (Classification Macro F1)** | **1.0000** | Perfect precision & recall across all 5 email categories |
-| **Stage 1 Accuracy** | **1.0000** | **520 / 520 emails correctly classified** |
-| **Stage 3 (Defect Detection F1)** | **1.0000** | Zero missed defects, zero false alarms |
-| **Stage 3 Exact Match Rate** | **1.0000** | Exact set match on all discrepancy fields |
-| **End-to-End Defect Catch Rate** | **1.0000** | **46 / 46 planted defects flagged** |
-| **Reliability Escalation F1** | **1.0000** | Perfect detection of human-review edge cases |
-| `wrong_doc_type` | **5 / 5** | Non-BL/SI docs (Commercial Invoice, Packing List, COO) |
-| `missing_attachment` | **5 / 5** | Comparison requested but attachments missing |
-| `unreadable` | **5 / 5** | Corrupt streams & image-only scans |
-| `missing_value` | **5 / 5** | Placeholder tokens (`N/A`, `TBA`, `_______`, empty) |
+### 1. Using the Python Loader API (`loader.py`)
+The `Inbox` helper connects directly to the local evaluation server over HTTP:
+
+```python
+from data.loader import Inbox
+
+# Connect to the local evaluation server
+inbox = Inbox("http://localhost:8080")
+
+# Submit your generated submission dict and retrieve the live scoreboard
+scoreboard = inbox.submit(submission)
+print("Evaluation scoreboard:", scoreboard)
+```
+
+### 2. Using the CLI Entry Point
+You can also generate and submit in a single command using the `--submit` flag:
+
+```bash
+python run_pipeline.py --data data --output submission.json --submit http://localhost:8080
+```
+This automatically posts your results to `/submit`, validates schema compliance, and saves the evaluation breakdown to `submission_scores.json`.
 
 ---
 
@@ -108,7 +114,6 @@ sdoc/
 │   └── runner.py                   # End-to-end pipeline orchestrator
 ├── data/                           # Hackathon inbox records and document attachments
 ├── run_pipeline.py                 # CLI entry point to run pipeline & generate submission.json
-├── scoring.py                      # Official hackathon scoring evaluation suite
 ├── submission.json                 # Output submission adhering to the required schema
 ├── requirements.txt                # Python package dependencies
 ├── Dockerfile                      # Production container image
@@ -224,7 +229,7 @@ git init
 git add .
 
 # 3. Commit changes
-git commit -m "feat: complete shipping document verification pipeline with 1.0 score"
+git commit -m "feat: complete shipping document verification pipeline"
 
 # 4. Set main branch
 git branch -M main

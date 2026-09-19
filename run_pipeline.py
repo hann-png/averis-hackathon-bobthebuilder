@@ -163,7 +163,7 @@ def main():
             logger.info(f"\n{'='*60}")
             logger.info("SCOREBOARD")
             logger.info(f"{'='*60}")
-            logger.info(f"Final Score: {scoreboard.get('final_score', 'N/A'):.4f}")
+            logger.info(f"Evaluation Server Score: {scoreboard.get('final_score', 'N/A')}")
             s1 = scoreboard.get("stage1", {})
             logger.info(f"Stage 1 (Classification): accuracy={s1.get('accuracy', 0):.3f}, macro_f1={s1.get('macro_f1', 0):.3f}")
             s3 = scoreboard.get("stage3", {})
