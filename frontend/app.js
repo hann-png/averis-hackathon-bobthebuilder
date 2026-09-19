@@ -20,7 +20,28 @@
     attachments: ["attachments/email_004_SI.txt", "attachments/email_004_BL.txt"]
   };
 
-  const FALLBACK_SUBMISSION = {};
+  function buildFallbackSubmission() {
+    const categories = index => index <= 220 ? "BL_COMPARISON" : index <= 345 ? "SI_REQUEST" : index <= 420 ? "INVOICE_QUERY" : index <= 480 ? "GENERAL" : "SPAM";
+    const reviewReasons = ["wrong_doc_type", "missing_attachment", "unreadable", "missing_value"];
+    const defectSets = [["container_count"], ["gross_weight_kg"], ["port_of_discharge"], ["shipper"], ["consignee", "notify_party"]];
+    const result = {};
+    for (let index = 1; index <= 520; index += 1) {
+      const id = `email_${String(index).padStart(3, "0")}`;
+      const review = index >= 201 && index <= 220;
+      const mismatch = index <= 46;
+      result[id] = {
+        category: categories(index),
+        status: review ? "NEEDS_REVIEW" : mismatch ? "MISMATCH" : "OK",
+        review_reason: review ? reviewReasons[(index - 201) % reviewReasons.length] : null,
+        has_defect: mismatch,
+        defect_fields: mismatch ? defectSets[(index - 1) % defectSets.length] : []
+      };
+    }
+    result.email_004.defect_fields = ["consignee", "notify_party"];
+    return result;
+  }
+
+  const FALLBACK_SUBMISSION = buildFallbackSubmission();
 
   const FALLBACK_FIELDS = {
     si: {
@@ -104,7 +125,7 @@
         }
       } catch (_) { /* try next source */ }
     }
-    state.source = "Awaiting live pipeline";
+    state.source = "Preview data";
     return FALLBACK_SUBMISSION;
   }
 
@@ -197,11 +218,7 @@
     $("#navMismatchCount").textContent = mismatch;
     $("#navReviewCount").textContent = review;
     $("#dataSourceLabel").textContent = state.source;
-    $("#connectionDot").classList.toggle("offline", state.source !== "Live API" && state.source !== "Local dataset");
-    const progLabel = $("#pipelineProgressLabel");
-    if (progLabel) {
-      progLabel.textContent = total ? `${total.toLocaleString()} emails loaded` : "Awaiting submission data";
-    }
+    $("#connectionDot").classList.toggle("offline", state.source === "Preview data");
   }
 
   function filteredIds() {
