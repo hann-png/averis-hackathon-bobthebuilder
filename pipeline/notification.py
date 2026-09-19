@@ -400,6 +400,7 @@ def process_mismatch_notification(
     bl_fields: Optional[dict] = None,
     local_check: bool = True,
     actually_send: bool = False,
+    draft_overrides: Optional[dict] = None,
 ) -> dict:
     """
     Main notification function.
@@ -426,6 +427,10 @@ def process_mismatch_notification(
 
         actually_send:
             Send the email through SMTP.
+
+        draft_overrides:
+            Optional operator-edited subject/body. The recipient is intentionally
+            never overridable and remains locked to the original sender.
 
     By default, actually_send=False so testing cannot accidentally
     send emails.
@@ -461,11 +466,18 @@ def process_mismatch_notification(
             "reason": "missing_original_sender",
         }
 
+    overrides = draft_overrides or {}
+    if overrides.get("subject") is not None:
+        email["subject"] = str(overrides["subject"])
+    if overrides.get("body") is not None:
+        email["body"] = str(overrides["body"])
+
     response = {
         "triggered": True,
         "sent": False,
         "recipient": email["to"],
         "subject": email["subject"],
+        "body": email["body"],
     }
 
     # Save locally for checking/testing.

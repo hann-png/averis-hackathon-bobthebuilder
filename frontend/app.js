@@ -70,7 +70,16 @@
     emails: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_EMAIL]]),
     fields: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_FIELDS]]),
     reviewed: new Set(JSON.parse(localStorage.getItem("sdoc-reviewed") || "[]")),
+    reviewHistory: JSON.parse(localStorage.getItem("sdoc-review-history") || "[]"),
     drafts: new Map(),
+    metadata: new Map(),
+    metadataOnline: false,
+    assistantMessages: JSON.parse(sessionStorage.getItem("sdoc-assistant-messages") || "null") || [
+      { role: "assistant", text: "Hi, I’m BOB. I can find verification cases, count mismatches, inspect the review queue, and take you directly to an email." }
+    ],
+    assistantTyping: false,
+    assistantBusy: false,
+    lastDashboardNav: "overview",
     selectedId: "email_004",
     statusFilter: "FLAGGED",
     categoryFilter: "ALL",
@@ -133,6 +142,34 @@
     }
     state.source = "Preview data";
     return FALLBACK_SUBMISSION;
+  }
+
+  async function loadOperatorMetadata() {
+    try {
+      const payload = await fetchJson(apiUrl("/operator/metadata"), 6000);
+      const records = payload.emails || {};
+      state.metadata = new Map(Object.entries(records));
+      state.reviewed = new Set(Object.entries(records).filter(([, value]) => value.reviewed).map(([id]) => id));
+      state.reviewHistory = Object.values(records)
+        .filter(value => value.reviewed && value.reviewed_at)
+        .sort((a, b) => String(b.reviewed_at).localeCompare(String(a.reviewed_at)))
+        .map(value => ({ id: value.email_id, reviewedAt: value.reviewed_at }));
+      state.metadataOnline = true;
+      localStorage.setItem("sdoc-reviewed", JSON.stringify([...state.reviewed]));
+      localStorage.setItem("sdoc-review-history", JSON.stringify(state.reviewHistory));
+      return true;
+    } catch (_) {
+      state.metadataOnline = false;
+      return false;
+    }
+  }
+
+  async function recordOpened(emailId) {
+    if (!state.metadataOnline) return;
+    try {
+      const metadata = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/opened`), 5000, { method: "POST" });
+      state.metadata.set(emailId, metadata);
+    } catch (_) { /* opening an email must never be blocked by activity logging */ }
   }
 
   function computeStats(submission) {
@@ -310,17 +347,18 @@
 
   function renderDraft(draft) {
     const fields = (draft.defect_fields || []).map(field => `<span>${escapeHtml(titleCase(field))}</span>`).join("");
-    const generatedDate = draft.generated_at ? new Date(draft.generated_at) : null;
+    const displayedTimestamp = draft.saved_at || draft.generated_at;
+    const generatedDate = displayedTimestamp ? new Date(displayedTimestamp) : null;
     const generatedAt = generatedDate && !Number.isNaN(generatedDate.getTime())
       ? generatedDate.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
       : "Generated now";
-    $("#draftComposer").innerHTML = `<article class="draft-composer">
+    $("#draftComposer").innerHTML = `<article class="draft-composer ${draft.is_saved ? "is-saved" : ""}">
       <header class="draft-composer-head">
         <div class="draft-heading">
           <span class="draft-mark"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h8l6 6v10.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z"/><path d="M14 3v6h6M8 14h8M8 17h5"/></svg></span>
           <div><p class="eyebrow">Clarification email</p><h3>Response draft</h3></div>
         </div>
-        <div class="draft-state"><span></span>Draft only · Not sent</div>
+        <div class="draft-state"><span></span><b>${draft.is_saved ? "Saved" : "Draft only"}</b> · Not sent</div>
       </header>
 
       <div class="draft-evidence">
@@ -329,14 +367,14 @@
       </div>
 
       <div class="draft-address-row"><span>To</span><strong>${escapeHtml(draft.recipient || "Recipient unavailable")}</strong><i>Original sender</i></div>
-      <div class="draft-address-row"><span>Subject</span><strong>${escapeHtml(draft.subject || "Shipping document clarification")}</strong></div>
+      <label class="draft-address-row draft-subject-row"><span>Subject</span><input id="draftSubject" type="text" maxlength="300" value="${escapeHtml(draft.subject || "Shipping document clarification")}" aria-label="Draft subject"></label>
       <div class="draft-body-wrap">
-        <div class="draft-body-toolbar"><span>Message</span><small>${escapeHtml(generatedAt)}</small></div>
-        <textarea id="draftBody" readonly spellcheck="false" aria-label="Generated response draft">${escapeHtml(draft.body || "")}</textarea>
+        <div class="draft-body-toolbar"><span>Message</span><small>${draft.is_saved ? "Saved" : "Generated"} ${escapeHtml(generatedAt)}</small></div>
+        <textarea id="draftBody" maxlength="20000" spellcheck="true" aria-label="Generated response draft">${escapeHtml(draft.body || "")}</textarea>
       </div>
 
       <footer class="draft-actions">
-        <p><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>Saving creates a local draft only. No email will be sent.</p>
+        <p><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>You can edit this draft. The recipient stays locked and saving never sends it.</p>
         <div>
           <button class="secondary-button" type="button" data-draft-action="regenerate"><svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5l2-2.5"/></svg>Regenerate</button>
           <button class="secondary-button" type="button" data-draft-action="copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copy</button>
@@ -355,7 +393,8 @@
     }
     renderDraftLoading();
     try {
-      const draft = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/notification`), 8000);
+      const regenerate = options.force ? "?regenerate=true" : "";
+      const draft = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/notification${regenerate}`), 8000);
       if (state.selectedId !== emailId) return;
       if (!draft.notification_eligible) throw new Error("This email is not eligible for a clarification draft.");
       state.drafts.set(emailId, draft);
@@ -368,13 +407,21 @@
   async function copyDraft() {
     const draft = state.drafts.get(state.selectedId);
     if (!draft) return;
-    const content = `To: ${draft.recipient || ""}\nSubject: ${draft.subject || ""}\n\n${draft.body || ""}`;
+    const subject = $("#draftSubject")?.value || draft.subject || "";
+    const body = $("#draftBody")?.value || draft.body || "";
+    const content = `To: ${draft.recipient || ""}\nSubject: ${subject}\n\n${body}`;
     await navigator.clipboard?.writeText(content);
     showToast("Response draft copied");
   }
 
   async function saveDraft(button) {
     const emailId = state.selectedId;
+    const subject = $("#draftSubject")?.value.trim() || "";
+    const body = $("#draftBody")?.value.trim() || "";
+    if (!subject || !body) {
+      showToast("Subject and message cannot be empty", "warning");
+      return;
+    }
     const original = button.innerHTML;
     button.disabled = true;
     button.classList.add("is-loading");
@@ -383,9 +430,13 @@
       const result = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/notification/send`), 10000, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actually_send: false, save_locally: true })
+        body: JSON.stringify({ actually_send: false, save_locally: true, subject, body })
       });
-      showToast(result.local_check?.saved ? "Draft saved locally" : "Draft prepared");
+      const current = state.drafts.get(emailId) || {};
+      const saved = { ...current, ...(result.draft || {}), subject, body, is_saved: Boolean(result.local_check?.saved), saved_at: result.draft?.saved_at };
+      state.drafts.set(emailId, saved);
+      renderDraft(saved);
+      showToast(result.local_check?.saved ? "Draft saved safely" : "Draft prepared");
     } catch (error) {
       showToast(error.name === "AbortError" ? "Save request timed out" : "Could not save the draft", "error");
     } finally {
@@ -393,6 +444,291 @@
       button.classList.remove("is-loading");
       button.innerHTML = original;
     }
+  }
+
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  const idNumber = id => Number(String(id).match(/\d+/)?.[0] || 0);
+  const newestFirst = ids => [...ids].sort((a, b) => {
+    const aTime = Date.parse(state.metadata.get(a)?.processed_at || "") || 0;
+    const bTime = Date.parse(state.metadata.get(b)?.processed_at || "") || 0;
+    return bTime - aTime || idNumber(b) - idNumber(a);
+  });
+  const happenedToday = value => {
+    const date = value ? new Date(value) : null;
+    const today = new Date();
+    return date && !Number.isNaN(date.getTime()) && date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+  };
+
+  function assistantCardHtml(id, requestedTab = "comparison") {
+    const item = state.submission[id];
+    if (!item) return "";
+    const email = state.emails.get(id);
+    const cls = statusClass(item.status);
+    const issueCopy = item.status === "MISMATCH"
+      ? `${item.defect_fields?.length || 0} ${(item.defect_fields?.length || 0) === 1 ? "discrepancy" : "discrepancies"}`
+      : item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason || "Review required") : "Verified clean";
+    return `<button class="assistant-result-card ${cls}" type="button" data-open-email="${escapeHtml(id)}" data-open-tab="${escapeHtml(requestedTab)}">
+      <span class="assistant-result-accent"></span>
+      <span class="assistant-result-content">
+        <span class="assistant-result-top"><strong>${escapeHtml(formatId(id))}</strong><i class="status-chip ${cls}">${statusLabel(item.status)}</i></span>
+        <span class="assistant-result-subject">${escapeHtml(displaySubject(email?.subject) || titleCase(item.category))}</span>
+        <span class="assistant-result-meta">${escapeHtml(issueCopy)}<i></i>${escapeHtml(titleCase(item.category))}</span>
+      </span>
+      <span class="assistant-result-open"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+    </button>`;
+  }
+
+  function assistantMessageHtml(message) {
+    const cards = (message.cards || []).map(card => assistantCardHtml(card.id || card, card.tab || "comparison")).join("");
+    const metric = message.metric ? `<div class="assistant-metric"><strong>${escapeHtml(message.metric.value)}</strong><span>${escapeHtml(message.metric.label)}</span></div>` : "";
+    const source = message.source ? `<span class="assistant-response-source">${escapeHtml(message.source)}</span>` : "";
+    return `<div class="assistant-message ${message.role}">
+      ${message.role === "assistant" ? '<span class="assistant-message-avatar"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span>' : ""}
+      <div class="assistant-message-stack"><div class="assistant-bubble">${escapeHtml(message.text).replace(/\n/g, "<br>")}</div>${source}${metric}${cards ? `<div class="assistant-result-stack">${cards}</div>` : ""}</div>
+    </div>`;
+  }
+
+  function renderAssistantMessages() {
+    const full = $("#assistantFullMessages");
+    const compact = $("#assistantCompactMessages");
+    if (!full || !compact) return;
+    const typing = state.assistantTyping ? `<div class="assistant-message assistant"><span class="assistant-message-avatar"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/></svg></span><div class="assistant-bubble assistant-typing"><i></i><i></i><i></i></div></div>` : "";
+    full.innerHTML = state.assistantMessages.map(assistantMessageHtml).join("") + typing;
+    compact.innerHTML = state.assistantMessages.slice(-6).map(assistantMessageHtml).join("") + typing;
+    $("#assistantFull").classList.toggle("has-conversation", state.assistantMessages.length > 1);
+    sessionStorage.setItem("sdoc-assistant-messages", JSON.stringify(state.assistantMessages.slice(-30)));
+    requestAnimationFrame(() => {
+      full.scrollTop = full.scrollHeight;
+      compact.scrollTop = compact.scrollHeight;
+    });
+  }
+
+  async function prepareAssistantCards(ids, limit = 4) {
+    const selected = ids.slice(0, limit);
+    await Promise.all(selected.map(id => loadEmail(id)));
+    return selected.map(id => ({ id }));
+  }
+
+  async function buildLocalAssistantReply(prompt) {
+    const query = prompt.toLowerCase().trim();
+    const entries = Object.entries(state.submission);
+    const matchingStatus = status => entries.filter(([, item]) => item.status === status).map(([id]) => id);
+    const explicitId = query.match(/email[\s_-]?(\d{1,4})/i);
+
+    if (explicitId) {
+      const id = `email_${String(explicitId[1]).padStart(3, "0")}`;
+      if (!state.submission[id]) return { role: "assistant", text: `I couldn’t find ${formatId(id)} in the current dataset.` };
+      await loadEmail(id);
+      const wantsDraft = /draft|reply|response/.test(query) && state.submission[id].status === "MISMATCH";
+      return { role: "assistant", text: `${formatId(id)} is ready. Open it to inspect the ${wantsDraft ? "response draft" : "verification result"}.`, cards: [{ id, tab: wantsDraft ? "draft" : "comparison" }] };
+    }
+
+    if (/draft|reply|response/.test(query)) {
+      const id = state.selectedId;
+      const item = state.submission[id];
+      if (!item || item.status !== "MISMATCH") return { role: "assistant", text: "Response drafts are available only for confirmed mismatches. Open a mismatched email first, or ask me to show mismatched emails." };
+      await loadEmail(id);
+      return { role: "assistant", text: `The clarification draft for ${formatId(id)} is ready to inspect.`, cards: [{ id, tab: "draft" }] };
+    }
+
+    if (/what can you do|help|commands|examples/.test(query)) {
+      return { role: "assistant", text: "I can count mismatches, show the review queue, find wrong document types, open a specific email, locate your latest reviewed case, filter by category, and take you directly to a response draft." };
+    }
+
+    if (/wrong\s+(document|doc)|document\s+type/.test(query)) {
+      const ids = newestFirst(entries.filter(([, item]) => item.review_reason === "wrong_doc_type").map(([id]) => id));
+      return { role: "assistant", text: ids.length ? `I found ${ids.length} emails escalated because the document type is wrong.` : "No wrong-document-type cases are currently recorded.", metric: { value: ids.length, label: "Wrong document type" }, cards: await prepareAssistantCards(ids) };
+    }
+
+    if (/latest\s+reviewed|last\s+reviewed|recently\s+reviewed/.test(query)) {
+      const id = state.reviewHistory[0]?.id || [...state.reviewed].at(-1);
+      if (!id || !state.submission[id]) return { role: "assistant", text: "No reviewed email has been recorded in this browser yet." };
+      await loadEmail(id);
+      return { role: "assistant", text: `${formatId(id)} is the most recently reviewed email recorded in this browser.`, cards: [{ id }] };
+    }
+
+    if (/review/.test(query)) {
+      const ids = newestFirst(matchingStatus("NEEDS_REVIEW"));
+      const latestOnly = /newest|latest|most recent/.test(query);
+      const cards = await prepareAssistantCards(latestOnly ? ids.slice(0, 1) : ids);
+      return { role: "assistant", text: latestOnly ? (ids.length ? "This is the newest case in the review queue, based on dataset order." : "The review queue is empty.") : `${ids.length} emails currently need an operator review.`, metric: latestOnly ? null : { value: ids.length, label: "Need review" }, cards };
+    }
+
+    if (/mismatch|discrepanc|flagged/.test(query)) {
+      const onlyMismatch = /mismatch|discrepanc/.test(query);
+      let ids = newestFirst(entries.filter(([, item]) => onlyMismatch ? item.status === "MISMATCH" : ["MISMATCH", "NEEDS_REVIEW"].includes(item.status)).map(([id]) => id));
+      let todayNote = "";
+      if (/today/.test(query)) {
+        const timestamped = ids.filter(id => state.metadata.get(id)?.processed_at);
+        ids = timestamped.filter(id => happenedToday(state.metadata.get(id).processed_at));
+        todayNote = timestamped.length ? " These results use the backend processing timestamp." : " Processing timestamps are unavailable for this dataset.";
+      }
+      return { role: "assistant", text: `I found ${ids.length} ${onlyMismatch ? "mismatched" : "flagged"} emails${/today/.test(query) ? " for today" : ""}.${todayNote}`, metric: { value: ids.length, label: onlyMismatch ? "Mismatches" : "Flagged cases" }, cards: await prepareAssistantCards(ids) };
+    }
+
+    if (/clean|verified|passed/.test(query)) {
+      const ids = newestFirst(matchingStatus("OK"));
+      return { role: "assistant", text: `${ids.length} emails were verified clean by the current pipeline.`, metric: { value: ids.length, label: "Verified clean" }, cards: await prepareAssistantCards(ids, 3) };
+    }
+
+    const categoryMap = [
+      [/bill of lading|bl comparison|\bbl\b/, "BL_COMPARISON"],
+      [/shipping instruction|si request|\bsi\b/, "SI_REQUEST"],
+      [/invoice/, "INVOICE_QUERY"], [/spam/, "SPAM"], [/general/, "GENERAL"]
+    ];
+    const category = categoryMap.find(([pattern]) => pattern.test(query))?.[1];
+    if (category) {
+      const ids = newestFirst(entries.filter(([, item]) => item.category === category).map(([id]) => id));
+      return { role: "assistant", text: `I found ${ids.length} emails classified as ${titleCase(category)}.`, metric: { value: ids.length, label: titleCase(category) }, cards: await prepareAssistantCards(ids) };
+    }
+
+    const stopWords = new Set(["find", "show", "open", "mail", "email", "the", "that", "with", "about", "please", "can", "you", "me", "a", "an", "my", "for"]);
+    const terms = query.replace(/[^a-z0-9@.]+/g, " ").split(/\s+/).filter(term => term.length > 2 && !stopWords.has(term));
+    const searchable = [...state.emails.entries()].filter(([id]) => state.submission[id]);
+    const scored = searchable.map(([id, email]) => {
+      const haystack = `${id} ${email.subject || ""} ${email.from || ""}`.toLowerCase();
+      return { id, score: terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0) };
+    }).filter(result => result.score > 0).sort((a, b) => b.score - a.score).map(result => result.id);
+    if (scored.length) return { role: "assistant", text: `I found ${scored.length} matching emails among the messages currently loaded in the workspace.`, cards: await prepareAssistantCards(scored) };
+
+    return { role: "assistant", text: "Try asking for mismatched emails, the newest review case, wrong document types, a category, or a specific ID such as EMAIL_004." };
+  }
+
+  async function buildAssistantReply(prompt) {
+    try {
+      const payload = await fetchJson(apiUrl("/assistant/query"), 12000, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: prompt,
+          selected_email_id: state.selectedId,
+          timezone_offset_minutes: new Date().getTimezoneOffset()
+        })
+      });
+
+      (payload.results || []).forEach(result => {
+        const emailId = result.email_id;
+        if (!emailId || !state.submission[emailId]) return;
+        const currentEmail = state.emails.get(emailId) || { email_id: emailId, attachments: [] };
+        state.emails.set(emailId, {
+          ...currentEmail,
+          email_id: emailId,
+          from: result.sender || currentEmail.from,
+          subject: result.subject || currentEmail.subject
+        });
+        const currentMetadata = state.metadata.get(emailId) || {};
+        state.metadata.set(emailId, {
+          ...currentMetadata,
+          processed_at: result.processed_at ?? currentMetadata.processed_at,
+          reviewed_at: result.reviewed_at ?? currentMetadata.reviewed_at,
+          last_opened_at: result.last_opened_at ?? currentMetadata.last_opened_at
+        });
+      });
+
+      return {
+        role: "assistant",
+        text: payload.message,
+        metric: payload.metric || null,
+        cards: (payload.results || []).map(result => ({ id: result.email_id, tab: result.tab || "comparison" })),
+        source: payload.blocked
+          ? "Security policy"
+          : payload.interpreted_by === "gemini"
+            ? "AI interpreted · verified workspace data"
+            : "Verified workspace data"
+      };
+    } catch (_) {
+      const fallback = await buildLocalAssistantReply(prompt);
+      return { ...fallback, source: "Offline workspace fallback" };
+    }
+  }
+
+  async function submitAssistantPrompt(prompt) {
+    const value = String(prompt || "").trim();
+    if (!value || state.assistantBusy) return;
+    state.assistantBusy = true;
+    state.assistantMessages.push({ role: "user", text: value });
+    state.assistantTyping = true;
+    renderAssistantMessages();
+    $$('[data-assistant-input]').forEach(input => { input.value = ""; input.disabled = true; });
+    await wait(420);
+    try {
+      state.assistantMessages.push(await buildAssistantReply(value));
+    } catch (_) {
+      state.assistantMessages.push({ role: "assistant", text: "I couldn’t complete that search. Please try again." });
+    } finally {
+      state.assistantTyping = false;
+      state.assistantBusy = false;
+      $$('[data-assistant-input]').forEach(input => { input.disabled = false; });
+      renderAssistantMessages();
+      const visibleInput = $("#assistantFull").classList.contains("visible") ? $("#assistantFull [data-assistant-input]") : $("#assistantCompact [data-assistant-input]");
+      visibleInput?.focus();
+    }
+  }
+
+  function openAssistant(mode = "compact") {
+    if (mode === "full") {
+      closeAssistantCompact();
+      const panel = $("#assistantFull");
+      panel.hidden = false;
+      panel.setAttribute("aria-hidden", "false");
+      $(".main-content").classList.add("assistant-view-open");
+      $("#assistantOrb").classList.add("full-open");
+      $(".main-content").scrollTo({ top: 0, behavior: "auto" });
+      setActiveNav($("#askBobNav"));
+      requestAnimationFrame(() => panel.classList.add("visible"));
+      setTimeout(() => $("#assistantFull [data-assistant-input]")?.focus(), 360);
+    } else {
+      const panel = $("#assistantCompact");
+      panel.classList.add("visible");
+      panel.setAttribute("aria-hidden", "false");
+      $("#assistantOrb").classList.add("compact-open");
+      $("#assistantOrb").setAttribute("aria-expanded", "true");
+      setTimeout(() => $("#assistantCompact [data-assistant-input]")?.focus(), 260);
+    }
+    renderAssistantMessages();
+  }
+
+  function closeAssistantCompact() {
+    $("#assistantCompact").classList.remove("visible");
+    $("#assistantCompact").setAttribute("aria-hidden", "true");
+    $("#assistantOrb").classList.remove("compact-open");
+    $("#assistantOrb").setAttribute("aria-expanded", "false");
+  }
+
+  function closeAssistantFull(restoreNavigation = true) {
+    const panel = $("#assistantFull");
+    panel.classList.remove("visible", "is-navigating");
+    panel.setAttribute("aria-hidden", "true");
+    $(".main-content").classList.remove("assistant-view-open");
+    $("#assistantOrb").classList.remove("full-open");
+    setTimeout(() => { if (!panel.classList.contains("visible")) panel.hidden = true; }, 420);
+    if (restoreNavigation) setActiveNav($(`.nav-item[data-nav="${state.lastDashboardNav}"]`) || $('.nav-item[data-nav="overview"]'));
+  }
+
+  async function navigateFromAssistant(emailId, tabName = "comparison") {
+    const item = state.submission[emailId];
+    if (!item) return;
+    const fullWasOpen = $("#assistantFull").classList.contains("visible");
+    if (fullWasOpen) {
+      $("#assistantFull").classList.add("is-navigating");
+      await wait(280);
+      closeAssistantFull(false);
+      openAssistant("compact");
+    }
+    const navName = item.status === "MISMATCH" ? "mismatch" : item.status === "NEEDS_REVIEW" ? "review" : "verified";
+    state.lastDashboardNav = navName;
+    state.statusFilter = item.status;
+    state.search = "";
+    state.visibleCount = 20;
+    $("#searchInput").value = "";
+    setActiveNav($(`.nav-item[data-nav="${navName}"]`));
+    $$("#statusFilters button").forEach(button => button.classList.toggle("active", button.dataset.status === (item.status === "OK" ? "OK" : "FLAGGED")));
+    renderQueue();
+    await selectEmail(emailId, { silent: true });
+    setTab(tabName === "draft" && item.status === "MISMATCH" ? "draft" : "comparison");
+    $(".detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    state.assistantMessages.push({ role: "assistant", text: `${formatId(emailId)} is open in the verification workspace.` });
+    renderAssistantMessages();
   }
 
   function renderComparison(item, fields) {
@@ -432,11 +768,13 @@
   }
 
   function renderAudit(item) {
+    const metadata = state.metadata.get(state.selectedId);
+    const reviewedAt = metadata?.reviewed_at ? new Date(metadata.reviewed_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Human review";
     const events = [
       ["Email classified", `Assigned to ${titleCase(item.category)}.`, "Stage 1"],
       ...(item.category === "BL_COMPARISON" ? [["Documents extracted", "Seven canonical shipping fields evaluated.", "Stage 2"]] : []),
       [item.status === "NEEDS_REVIEW" ? "Case escalated" : "Verification completed", item.status === "MISMATCH" ? `${item.defect_fields.length} mismatched field(s) surfaced.` : item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason) : "No mismatch detected.", "Stage 3"],
-      ...(state.reviewed.has(state.selectedId) ? [["Operator reviewed", "Case marked as reviewed in this browser.", "Human review"]] : [])
+      ...(state.reviewed.has(state.selectedId) ? [["Operator reviewed", "Case marked as reviewed and saved to operator activity.", reviewedAt]] : [])
     ];
     $("#auditTimeline").innerHTML = events.map(([title, description, time]) => `<div class="timeline-item"><span class="timeline-dot"></span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(description)}</p><time>${escapeHtml(time)}</time></div>`).join("");
   }
@@ -472,6 +810,7 @@
     draftTabButton.hidden = item.status !== "MISMATCH";
     if (item.status !== "MISMATCH" && draftTabButton.classList.contains("active")) setTab("comparison");
     if (item.status === "MISMATCH") loadDraft(emailId);
+    if (options.trackOpen !== false) recordOpened(emailId);
     if (!options.silent) $(".detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -482,13 +821,46 @@
     $("span", button).textContent = reviewed ? "Reviewed" : "Mark reviewed";
   }
 
-  function toggleReviewed() {
-    if (state.reviewed.has(state.selectedId)) state.reviewed.delete(state.selectedId);
-    else state.reviewed.add(state.selectedId);
-    localStorage.setItem("sdoc-reviewed", JSON.stringify([...state.reviewed]));
-    updateReviewedButton();
-    renderAudit(state.submission[state.selectedId]);
-    showToast(state.reviewed.has(state.selectedId) ? "Case marked as reviewed" : "Review mark removed");
+  async function toggleReviewed() {
+    const emailId = state.selectedId;
+    const reviewed = !state.reviewed.has(emailId);
+    const button = $("#reviewedButton");
+    button.disabled = true;
+    try {
+      if (state.metadataOnline) {
+        const metadata = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/review`), 7000, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewed, reviewer: "operator" })
+        });
+        state.metadata.set(emailId, metadata);
+        if (metadata.reviewed) state.reviewed.add(emailId);
+        else state.reviewed.delete(emailId);
+        state.reviewHistory = metadata.reviewed
+          ? [{ id: emailId, reviewedAt: metadata.reviewed_at }, ...state.reviewHistory.filter(entry => entry.id !== emailId)].slice(0, 100)
+          : state.reviewHistory.filter(entry => entry.id !== emailId);
+        showToast(metadata.reviewed ? "Review saved to workspace" : "Review mark removed");
+      } else {
+        if (reviewed) {
+          state.reviewed.add(emailId);
+          state.reviewHistory = [{ id: emailId, reviewedAt: new Date().toISOString() }, ...state.reviewHistory.filter(entry => entry.id !== emailId)].slice(0, 100);
+        } else {
+          state.reviewed.delete(emailId);
+          state.reviewHistory = state.reviewHistory.filter(entry => entry.id !== emailId);
+        }
+        showToast("API unavailable — review saved in this browser", "warning");
+      }
+      localStorage.setItem("sdoc-reviewed", JSON.stringify([...state.reviewed]));
+      localStorage.setItem("sdoc-review-history", JSON.stringify(state.reviewHistory));
+      if (state.selectedId === emailId) {
+        updateReviewedButton();
+        renderAudit(state.submission[emailId]);
+      }
+    } catch (_) {
+      showToast("Could not update the review status", "error");
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function setTab(tabName) {
@@ -565,7 +937,22 @@
       if (action === "save") saveDraft(button);
       if (["retry", "regenerate"].includes(action)) loadDraft(state.selectedId, { force: true });
     });
+    $("#draftComposer").addEventListener("input", event => {
+      if (!event.target.matches("#draftSubject, #draftBody")) return;
+      const composer = event.target.closest(".draft-composer");
+      composer?.classList.add("has-edits");
+      const label = $(".draft-state b", composer);
+      if (label) label.textContent = "Edited";
+    });
     $$(".nav-item[data-nav]").forEach(button => button.addEventListener("click", () => {
+      if (button.dataset.nav === "assistant") {
+        openAssistant("full");
+        if (window.matchMedia("(max-width: 960px)").matches) closeSidebar();
+        return;
+      }
+      closeAssistantFull(false);
+      closeAssistantCompact();
+      state.lastDashboardNav = button.dataset.nav;
       const status = button.dataset.focusStatus || "FLAGGED";
       setActiveNav(button);
       state.statusFilter = status;
@@ -584,6 +971,8 @@
       }
       if (event.key === "Escape") {
         $("#morePopover").hidden = true;
+        if ($("#assistantFull").classList.contains("visible")) closeAssistantFull();
+        else closeAssistantCompact();
         closeSidebar();
       }
     });
@@ -608,6 +997,26 @@
     $("#openSidebar").addEventListener("click", toggleSidebar);
     $("#closeSidebar").addEventListener("click", closeSidebar);
     $("#mobileScrim").addEventListener("click", closeSidebar);
+    $("#assistantOrb").addEventListener("click", () => $("#assistantCompact").classList.contains("visible") ? closeAssistantCompact() : openAssistant("compact"));
+    $("#closeAssistantCompact").addEventListener("click", closeAssistantCompact);
+    $("#expandAssistant").addEventListener("click", () => openAssistant("full"));
+    $("#closeAssistantFull").addEventListener("click", () => closeAssistantFull());
+    $("#minimizeAssistant").addEventListener("click", () => { closeAssistantFull(false); openAssistant("compact"); });
+    $("#clearAssistant").addEventListener("click", () => {
+      state.assistantMessages = [{ role: "assistant", text: "Conversation cleared. What would you like to find in the verification workspace?" }];
+      renderAssistantMessages();
+    });
+    $$("[data-assistant-form]").forEach(form => form.addEventListener("submit", event => {
+      event.preventDefault();
+      submitAssistantPrompt($("[data-assistant-input]", form).value);
+    }));
+    document.addEventListener("click", event => {
+      const prompt = event.target.closest("[data-assistant-prompt]");
+      if (prompt) submitAssistantPrompt(prompt.dataset.assistantPrompt);
+      const result = event.target.closest("[data-open-email]");
+      if (result) navigateFromAssistant(result.dataset.openEmail, result.dataset.openTab);
+    });
+    $$(".assistant-add-button").forEach(button => button.addEventListener("click", () => showToast("Try: Open EMAIL_004 or show mismatched emails")));
     window.addEventListener("resize", () => requestAnimationFrame(() => moveNavSelection()));
   }
 
@@ -644,6 +1053,7 @@
     const button = $("#refreshButton");
     button.classList.add("spinning");
     state.submission = await loadSubmission();
+    await loadOperatorMetadata();
     state.stats = computeStats(state.submission);
     if (!state.submission[state.selectedId]) state.selectedId = Object.keys(state.submission)[0];
     renderStats();
@@ -662,9 +1072,11 @@
       $(".app-shell").classList.add("sidebar-collapsed");
     }
     bindEvents();
+    renderAssistantMessages();
     syncSidebarButton();
     requestAnimationFrame(() => moveNavSelection());
     state.submission = await loadSubmission();
+    await loadOperatorMetadata();
     state.stats = computeStats(state.submission);
     if (!state.submission[state.selectedId]) state.selectedId = Object.keys(state.submission)[0];
     renderStats();

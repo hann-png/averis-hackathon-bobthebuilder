@@ -6,12 +6,17 @@ Endpoints:
   POST /process           - Runs the full pipeline on data/ and returns the submission
   GET  /submission        - Returns the current/cached submission.json
   GET  /email/{email_id}  - Process or retrieve result for a specific email
+  GET  /operator/metadata - Persistent operator review/open activity
+  POST /email/{email_id}/review - Persist an operator review decision
+  POST /email/{email_id}/opened - Record dashboard navigation activity
+  POST /assistant/query     - Safe natural-language workspace queries
   GET  /stats             - Summary statistics of classification and verification
 """
 
 import os
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -31,6 +36,8 @@ from pipeline.security import (
     PIIRedactor,
 )
 from data.loader import Inbox
+from api.operator_state import OperatorStateStore, utc_now
+from api.assistant import run_assistant_query
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,9 @@ if FRONTEND_DIR.exists():
 
 DATA_DIR = os.environ.get("SDOC_DATA_DIR", "data")
 SUBMISSION_FILE = os.environ.get("SDOC_SUBMISSION_FILE", "submission.json")
+_state_db_setting = Path(os.environ.get("SDOC_STATE_DB", "runtime/operator_state.db"))
+STATE_DB_FILE = _state_db_setting if _state_db_setting.is_absolute() else ROOT_DIR / _state_db_setting
+operator_state = OperatorStateStore(STATE_DB_FILE)
 
 
 def _get_submission() -> dict:
@@ -58,6 +68,20 @@ def _get_submission() -> dict:
         with open(SUBMISSION_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {}
+
+
+def _submission_processed_at() -> str | None:
+    """Use the submission file timestamp when no per-email source timestamp exists."""
+    try:
+        timestamp = Path(SUBMISSION_FILE).stat().st_mtime
+    except OSError:
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _require_known_email(email_id: str) -> None:
+    if email_id not in _get_submission():
+        raise HTTPException(status_code=404, detail=f"Email {email_id} not found in submission")
 
 
 @app.get("/", include_in_schema=False)
@@ -94,6 +118,7 @@ def trigger_process(data_dir: str = DATA_DIR):
         }
         with open(SUBMISSION_FILE, "w", encoding="utf-8") as f:
             json.dump(clean_submission, f, indent=2)
+        operator_state.ensure_emails(clean_submission.keys(), processed_at=utc_now())
         return {
             "status": "success",
             "emails_processed": len(clean_submission),
@@ -113,6 +138,7 @@ def get_submission():
             status_code=404,
             detail="No submission found. Run POST /process first."
         )
+    operator_state.ensure_emails(sub.keys(), processed_at=_submission_processed_at())
     return sub
 
 
@@ -122,6 +148,7 @@ def get_email_result(email_id: str, data_dir: str = DATA_DIR):
     # First check cached submission
     sub = _get_submission()
     if email_id in sub:
+        operator_state.ensure_emails([email_id], processed_at=_submission_processed_at())
         return {"email_id": email_id, **sub[email_id], "source": "cached"}
 
     # Otherwise process on-demand
@@ -130,12 +157,50 @@ def get_email_result(email_id: str, data_dir: str = DATA_DIR):
         email = inbox.get(email_id)
         result = process_email(inbox, email)
         clean = {k: v for k, v in result.items() if k != "decided_by"}
+        operator_state.ensure_emails([email_id], processed_at=utc_now())
         return {"email_id": email_id, **clean, "source": "on-demand"}
     except Exception as e:
         raise HTTPException(
             status_code=404,
             detail=f"Email {email_id} could not be processed: {e}"
         )
+
+
+class ReviewPayload(BaseModel):
+    reviewed: bool = True
+    reviewer: str = "operator"
+
+
+@app.get("/operator/metadata")
+def get_operator_metadata():
+    """Return review/open activity without altering the competition submission schema."""
+    submission = _get_submission()
+    operator_state.ensure_emails(submission.keys(), processed_at=_submission_processed_at())
+    return {
+        "emails": operator_state.list_all(),
+        "latest_reviewed": operator_state.latest_reviewed(),
+    }
+
+
+@app.get("/email/{email_id}/metadata")
+def get_email_metadata(email_id: str):
+    _require_known_email(email_id)
+    return operator_state.get(email_id)
+
+
+@app.post("/email/{email_id}/review")
+def update_email_review(email_id: str, payload: ReviewPayload):
+    _require_known_email(email_id)
+    reviewer = payload.reviewer.strip()[:80] or "operator"
+    return operator_state.mark_reviewed(email_id, payload.reviewed, reviewer)
+
+
+@app.post("/email/{email_id}/opened")
+def record_email_opened(email_id: str):
+    _require_known_email(email_id)
+    return operator_state.mark_opened(email_id)
+
+
 @app.get("/email/{email_id}/confidence")
 def get_email_confidence(email_id: str, data_dir: str = DATA_DIR):
     """
@@ -306,7 +371,11 @@ def _get_email_and_fields(email_id: str, data_dir: str = DATA_DIR):
 
 
 @app.get("/email/{email_id}/notification")
-def get_email_notification_draft(email_id: str, data_dir: str = DATA_DIR):
+def get_email_notification_draft(
+    email_id: str,
+    regenerate: bool = False,
+    data_dir: str = DATA_DIR,
+):
     """
     Generate or retrieve the drafted mismatch email notification for an email.
     If the email has status MISMATCH, generates an email addressed to the original sender
@@ -337,6 +406,11 @@ def get_email_notification_draft(email_id: str, data_dir: str = DATA_DIR):
             "reason": "Original sender email address could not be identified from email headers",
         }
 
+    saved_draft = None if regenerate else operator_state.get_draft(email_id)
+    if saved_draft:
+        draft["subject"] = saved_draft["subject"]
+        draft["body"] = saved_draft["body"]
+
     return {
         "email_id": email_id,
         "status": "MISMATCH",
@@ -345,6 +419,8 @@ def get_email_notification_draft(email_id: str, data_dir: str = DATA_DIR):
         "subject": draft["subject"],
         "body": draft["body"],
         "generated_at": draft["generated_at"],
+        "saved_at": saved_draft["saved_at"] if saved_draft else None,
+        "is_saved": bool(saved_draft),
         "defect_fields": result.get("defect_fields", []),
     }
 
@@ -352,6 +428,8 @@ def get_email_notification_draft(email_id: str, data_dir: str = DATA_DIR):
 class NotificationSendPayload(BaseModel):
     actually_send: bool = False
     save_locally: bool = True
+    subject: str | None = None
+    body: str | None = None
 
 
 @app.post("/email/{email_id}/notification/send")
@@ -379,6 +457,13 @@ def trigger_notification_action(
             detail=f"Email {email_id} has status {result.get('status')}. Notifications are only generated for MISMATCH.",
         )
 
+    subject = payload.subject.strip() if payload.subject is not None else None
+    body = payload.body.strip() if payload.body is not None else None
+    if subject is not None and (not subject or len(subject) > 300 or "\n" in subject or "\r" in subject):
+        raise HTTPException(status_code=422, detail="Draft subject must be 1-300 characters with no line breaks")
+    if body is not None and (not body or len(body) > 20000):
+        raise HTTPException(status_code=422, detail="Draft body must be 1-20000 characters")
+
     response = process_mismatch_notification(
         auto_email_enabled=True,
         email_id=email_id,
@@ -388,7 +473,16 @@ def trigger_notification_action(
         bl_fields=bl_fields,
         local_check=payload.save_locally,
         actually_send=payload.actually_send,
+        draft_overrides={"subject": subject, "body": body},
     )
+    if payload.save_locally and response.get("local_check", {}).get("saved"):
+        saved_draft = operator_state.save_draft(
+            email_id=email_id,
+            recipient=response["recipient"],
+            subject=response["subject"],
+            body=response["body"],
+        )
+        response["draft"] = saved_draft
     return response
 
 
@@ -430,6 +524,41 @@ def scan_text_security(payload: SecurityScanTextPayload):
         "pii_breakdown": pii_stats["by_type"],
         "sanitized_text": redacted_text,
     }
+
+
+class AssistantQueryPayload(BaseModel):
+    query: str
+    selected_email_id: str | None = None
+    timezone_offset_minutes: int = 0
+
+
+@app.post("/assistant/query")
+def query_workspace_assistant(payload: AssistantQueryPayload, data_dir: str = DATA_DIR):
+    """Interpret a question and execute an allowlisted, read-only dataset query."""
+    query = payload.query.strip()
+    if not query or len(query) > 2000:
+        raise HTTPException(status_code=422, detail="Assistant query must be 1-2000 characters")
+    if not -840 <= payload.timezone_offset_minutes <= 840:
+        raise HTTPException(status_code=422, detail="Invalid timezone offset")
+
+    submission = _get_submission()
+    if not submission:
+        raise HTTPException(status_code=404, detail="No submission data available")
+    operator_state.ensure_emails(submission.keys(), processed_at=_submission_processed_at())
+    try:
+        emails = Inbox(data_dir).emails()
+    except Exception as exc:
+        logger.warning("Assistant could not load full email index: %s", exc)
+        emails = [{"email_id": email_id} for email_id in submission]
+
+    return run_assistant_query(
+        query=query,
+        submission=submission,
+        metadata=operator_state.list_all(),
+        emails=emails,
+        selected_email_id=payload.selected_email_id,
+        timezone_offset_minutes=payload.timezone_offset_minutes,
+    )
 
 
 @app.get("/stats")
@@ -474,4 +603,3 @@ def get_stats():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.main:app", host="127.0.0.1", port=8080, reload=True)
-

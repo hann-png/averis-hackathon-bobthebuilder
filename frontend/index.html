@@ -44,6 +44,10 @@
           <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
           <span>Verified</span>
         </button>
+        <button class="nav-item assistant-nav-item" id="askBobNav" type="button" data-nav="assistant">
+          <svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg>
+          <span>Ask BOB</span><span class="assistant-nav-badge">AI</span>
+        </button>
       </nav>
 
       <div class="sidebar-section">
@@ -227,8 +231,61 @@
           </div>
         </section>
       </section>
+
+      <section class="assistant-full" id="assistantFull" aria-label="Ask BOB assistant" aria-hidden="true" hidden>
+        <div class="assistant-full-ambient" aria-hidden="true"></div>
+        <header class="assistant-full-header">
+          <div class="assistant-identity">
+            <span class="assistant-avatar"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span>
+            <span><strong>Ask BOB</strong><small><i></i>Connected to verification workspace</small></span>
+          </div>
+          <div class="assistant-full-actions">
+            <button class="assistant-header-button" id="clearAssistant" type="button">Clear conversation</button>
+            <button class="icon-button" id="minimizeAssistant" type="button" aria-label="Minimize assistant" title="Minimize"><svg viewBox="0 0 24 24"><path d="M7 12h10"/></svg></button>
+            <button class="icon-button" id="closeAssistantFull" type="button" aria-label="Close assistant"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+        </header>
+        <div class="assistant-full-body">
+          <div class="assistant-intro">
+            <p class="eyebrow">Workspace intelligence</p>
+            <h2>What should we find?</h2>
+            <p>Search the verification queue, inspect flagged documents, or jump directly to an email.</p>
+            <div class="assistant-starter-grid">
+              <button type="button" data-assistant-prompt="Show me the newest email that needs review"><span><svg viewBox="0 0 24 24"><path d="M12 8v4m0 4h.01"/><circle cx="12" cy="12" r="9"/></svg></span><strong>Newest review</strong><small>Open the latest queued case</small></button>
+              <button type="button" data-assistant-prompt="How many emails have the wrong document type?"><span><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg></span><strong>Wrong document type</strong><small>Count and inspect escalations</small></button>
+              <button type="button" data-assistant-prompt="Show mismatched emails"><span><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg></span><strong>Mismatched emails</strong><small>Browse detected discrepancies</small></button>
+            </div>
+          </div>
+          <div class="assistant-messages full-messages" id="assistantFullMessages" aria-live="polite"></div>
+        </div>
+        <form class="assistant-composer assistant-composer-full" data-assistant-form>
+          <button type="button" class="assistant-add-button" aria-label="More assistant actions"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <input type="text" data-assistant-input autocomplete="off" placeholder="Ask about an email, status, mismatch, or review queue…" aria-label="Message Ask BOB">
+          <button type="submit" class="assistant-send-button" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button>
+        </form>
+        <p class="assistant-disclaimer">BOB searches the current verification dataset. Actions that change records still require operator confirmation.</p>
+      </section>
     </main>
   </div>
+
+  <button class="assistant-orb" id="assistantOrb" type="button" aria-label="Open Ask BOB" aria-expanded="false">
+    <span class="assistant-orb-aura" aria-hidden="true"></span>
+    <span class="assistant-orb-core"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span>
+    <span class="assistant-orb-label"><strong>Ask BOB</strong><small>Search your workspace</small></span>
+  </button>
+
+  <section class="assistant-compact glass-panel" id="assistantCompact" aria-label="Ask BOB compact assistant" aria-hidden="true">
+    <header class="assistant-compact-header">
+      <div class="assistant-identity"><span class="assistant-avatar small"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span><span><strong>Ask BOB</strong><small><i></i>Workspace ready</small></span></div>
+      <div><button class="icon-button" id="expandAssistant" type="button" aria-label="Open full conversation"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button><button class="icon-button" id="closeAssistantCompact" type="button" aria-label="Close assistant"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    </header>
+    <div class="assistant-messages compact-messages" id="assistantCompactMessages" aria-live="polite"></div>
+    <div class="assistant-quick-prompts"><button type="button" data-assistant-prompt="Show mismatched emails">Mismatches</button><button type="button" data-assistant-prompt="Show the review queue">Review queue</button><button type="button" data-assistant-prompt="Find my latest reviewed email">Last reviewed</button></div>
+    <form class="assistant-composer" data-assistant-form>
+      <input type="text" data-assistant-input autocomplete="off" placeholder="Ask BOB…" aria-label="Message Ask BOB">
+      <button type="submit" class="assistant-send-button" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button>
+    </form>
+  </section>
 
   <div class="popover glass-panel" id="morePopover" hidden>
     <button type="button" id="copyIdButton"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copy email ID</button>
