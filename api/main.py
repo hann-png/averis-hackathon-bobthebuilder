@@ -131,7 +131,123 @@ def get_email_result(email_id: str, data_dir: str = DATA_DIR):
             status_code=404,
             detail=f"Email {email_id} could not be processed: {e}"
         )
+@app.get("/email/{email_id}/confidence")
+def get_email_confidence(email_id: str, data_dir: str = DATA_DIR):
+    """
+    Return SI/BL extraction confidence as percentages.
 
+    This endpoint is separate from /submission so the competition
+    submission format is not changed.
+    """
+    try:
+        inbox = Inbox(data_dir)
+        email = inbox.get(email_id)
+
+        attachments = email.get("attachments", [])
+
+        si_path = None
+        bl_path = None
+
+        for attachment in attachments:
+            role = _identify_attachment(attachment)
+
+            if role == "SI" and not si_path:
+                si_path = attachment
+
+            elif role == "BL" and not bl_path:
+                bl_path = attachment
+
+        if not si_path and len(attachments) >= 1:
+            si_path = attachments[0]
+
+        if not bl_path and len(attachments) >= 2:
+            bl_path = attachments[1]
+
+        si_confidence = {}
+        bl_confidence = {}
+
+        si_low_confidence = []
+        bl_low_confidence = []
+
+        if si_path:
+            si_result = _extract_attachment(
+                inbox,
+                si_path,
+                "SI",
+            )
+
+            si_confidence = (
+                si_result.confidence_percentages()
+                if hasattr(si_result, "confidence_percentages")
+                else {}
+            )
+
+            si_low_confidence = (
+                si_result.low_confidence_fields()
+                if hasattr(si_result, "low_confidence_fields")
+                else []
+            )
+
+        if bl_path:
+            bl_result = _extract_attachment(
+                inbox,
+                bl_path,
+                "BL",
+            )
+
+            bl_confidence = (
+                bl_result.confidence_percentages()
+                if hasattr(bl_result, "confidence_percentages")
+                else {}
+            )
+
+            bl_low_confidence = (
+                bl_result.low_confidence_fields()
+                if hasattr(bl_result, "low_confidence_fields")
+                else []
+            )
+
+        def average_confidence(values: dict[str, float]) -> float:
+            if not values:
+                return 0.0
+
+            return round(
+                sum(values.values()) / len(values),
+                1,
+            )
+
+        return {
+            "email_id": email_id,
+            "si": {
+                "attachment": si_path,
+                "confidence": si_confidence,
+                "overall_confidence": average_confidence(
+                    si_confidence
+                ),
+                "low_confidence_fields": si_low_confidence,
+            },
+            "bl": {
+                "attachment": bl_path,
+                "confidence": bl_confidence,
+                "overall_confidence": average_confidence(
+                    bl_confidence
+                ),
+                "low_confidence_fields": bl_low_confidence,
+            },
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Could not calculate confidence for {email_id}: {e}"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Confidence information for {email_id} "
+                f"could not be generated: {e}"
+            ),
+        )
 
 def _get_email_and_fields(email_id: str, data_dir: str = DATA_DIR):
     """Internal helper to retrieve email, classification/result, and extracted fields."""
