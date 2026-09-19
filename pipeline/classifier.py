@@ -1,12 +1,13 @@
 """
-classifier.py — Email classifier for the Shipping Document Verification pipeline.
+classifier.py ? Email classifier for the Shipping Document Verification pipeline.
 
 Sorts emails into 5 categories:
   BL_COMPARISON, SI_REQUEST, INVOICE_QUERY, GENERAL, SPAM
 
-Strategy:
-  1. Fast, high-accuracy keyword and regex rules based on logistics patterns.
-  2. Fallback: Gemini API when rules are ambiguous or no rule matches.
+Strategy (AI-Primary):
+  1. Cheap pre-filter: Fast keyword & regex rules detect obvious spam without API calls.
+  2. Primary path: Gemini API classifies all other emails into the 5 categories.
+  3. Fallback: Rule-based classification if Gemini is unavailable or rate-limited.
 """
 
 import os
@@ -16,7 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ── Category constants ──────────────────────────────────────────────────────
+# Category constants
 CATEGORIES = ["BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM"]
 
 SPAM_DOMAINS = {
@@ -37,7 +38,7 @@ SPAM_PATTERNS = [
     r"gift\s+card",
     r"claim\s+now",
     r"click\s+here\s+to\s+claim",
-    r"\b90%\s+off\b",
+    r"90%\s+off",
     r"undelivered\s+messages",
     r"unpaid\s+customs\s+fee",
     r"your\s+(email\s+)?address\s+has\s+been\s+selected",
@@ -53,24 +54,40 @@ SPAM_PATTERNS = [
 ]
 
 
+def is_obvious_spam(email: dict) -> bool:
+    """
+    Cheap pre-filter to detect obvious spam without spending API quota.
+    Checks sender domain and high-confidence phishing/spam regex patterns.
+    """
+    sender = email.get("from", "")
+    domain = sender.split("@")[-1].strip().lower() if "@" in sender else ""
+    if domain in SPAM_DOMAINS:
+        return True
+
+    subj = email.get("subject", "")
+    body = email.get("body", "")
+    combined = f"{subj} {body}"
+    for pat in SPAM_PATTERNS:
+        if re.search(pat, combined, re.I):
+            return True
+
+    return False
+
+
 def classify_by_rules(email: dict) -> str | None:
     """
-    Classify an email using logistics keyword/regex rules.
-    Returns the category string, or None if ambiguous.
+    Fallback classification using keyword/regex rules when Gemini is unavailable.
+    Returns category string or None if ambiguous.
     """
     subj = email.get("subject", "")
     body = email.get("body", "")
     sender = email.get("from", "")
     combined = f"{subj} {body}"
-    domain = sender.split("@")[-1].strip().lower() if "@" in sender else ""
     atts = email.get("attachments", [])
 
-    # 1. SPAM check first
-    if domain in SPAM_DOMAINS:
+    # 1. SPAM check
+    if is_obvious_spam(email):
         return "SPAM"
-    for pat in SPAM_PATTERNS:
-        if re.search(pat, combined, re.I):
-            return "SPAM"
 
     # 2. GENERAL (Internal HR notices, reports, RPA alerts, holidays, delivery planning)
     if (
@@ -82,7 +99,7 @@ def classify_by_rules(email: dict) -> str | None:
         or re.search(r"submit\s+si\s*&\s*aed", subj, re.I)
         or re.search(r"wishing\s+everyone\s+a\s+happy", combined, re.I)
         or re.search(r"happy\s+.*new\s+year", combined, re.I)
-        or re.search(r"sla\b.*reminder", combined, re.I)
+        or re.search(r"sla.*reminder", combined, re.I)
         or re.search(r"pending\s+bl\s+release", combined, re.I)
     ):
         return "GENERAL"
@@ -104,9 +121,9 @@ def classify_by_rules(email: dict) -> str | None:
     # 4. SI_REQUEST (Explicit Shipping Instruction transmissions or requests)
     if (
         re.search(r"please\s+find\s+shipping\s+instruction\s+for", body, re.I)
-        or re.search(r"\brequest\s+si\b", subj, re.I)
-        or re.search(r"\bsi\s+needed\b", subj, re.I)
-        or re.search(r"\bcust\s+si\b", subj, re.I)
+        or re.search(r"request\s+si", subj, re.I)
+        or re.search(r"si\s+needed", subj, re.I)
+        or re.search(r"cust\s+si", subj, re.I)
         or re.search(r"^si\s*-\s*", subj, re.I)
         or re.search(r"^re_\s*si\s*-\s*", subj, re.I)
     ):
@@ -117,17 +134,17 @@ def classify_by_rules(email: dict) -> str | None:
         re.search(r"to\s+confirm\s+docs", subj, re.I)
         or re.search(r"request\s+bl\s+draft", subj, re.I)
         or re.search(r"draft\s+bl", subj, re.I)
-        or re.search(r"\b(AFEMY|AIE|AFPTME|AFRT)\s*-\s*", subj, re.I)
+        or re.search(r"(AFEMY|AIE|AFPTME|AFRT)\s*-\s*", subj, re.I)
         or re.search(r"please\s+compare\s+the\s+si\s+and\s+draft\s+bl", body, re.I)
         or re.search(r"attached\s+are\s+the\s+si\s+and\s+draft\s+bl", body, re.I)
         or len(atts) > 0
     ):
         return "BL_COMPARISON"
 
-    return None
+    return "GENERAL"
 
 
-# ── Gemini fallback ─────────────────────────────────────────────────────────
+# ?? Gemini Primary Client ??????????????????????????????????????????????????
 
 _gemini_client = None
 
@@ -135,6 +152,11 @@ _gemini_client = None
 def _get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            logger.warning("python-dotenv is not installed; .env file cannot be loaded automatically")
         from google import genai
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -144,7 +166,9 @@ def _get_gemini_client():
 
 
 def classify_by_gemini(email: dict) -> str:
-    """Classify an email using Gemini API as a fallback with structured output."""
+    """
+    Primary classification path: classify email using Gemini API with structured JSON output.
+    """
     client = _get_gemini_client()
 
     prompt = f"""You are classifying shipping/logistics company emails.
@@ -158,7 +182,8 @@ Classify this email into exactly ONE of these categories:
 Email:
 From: {email.get('from', '')}
 Subject: {email.get('subject', '')}
-Body: {email.get('body', '')[:500]}
+Body: {email.get('body', '')[:1000]}
+Attachments: {json.dumps(email.get('attachments', []))}
 
 Respond with ONLY the category name."""
 
@@ -186,20 +211,24 @@ Respond with ONLY the category name."""
     return cat if cat in CATEGORIES else "GENERAL"
 
 
-# ── Public API ──────────────────────────────────────────────────────────────
+# ?? Public Classification API ??????????????????????????????????????????????
 
 def classify(email: dict) -> tuple[str, str]:
     """
     Classify an email into one of the 5 categories.
+    Pre-filters obvious spam with keyword rules, then calls Gemini API as primary.
+    Falls back to rules if Gemini is unavailable or rate-limited.
     Returns (category, decided_by) where decided_by is 'rule' or 'gemini'.
     """
-    cat = classify_by_rules(email)
-    if cat is not None:
-        return cat, "rule"
+    # 1. Cheap pre-filter for obvious spam
+    if is_obvious_spam(email):
+        return "SPAM", "rule"
 
+    # 2. Primary path: Gemini API
     try:
         cat = classify_by_gemini(email)
         return cat, "gemini"
     except Exception as e:
-        logger.debug(f"Gemini classification fallback not available or failed: {e}")
-        return "GENERAL", "rule"
+        logger.warning(f"Gemini classification unavailable ({e}); using rules fallback")
+        cat = classify_by_rules(email)
+        return cat or "GENERAL", "rule"
