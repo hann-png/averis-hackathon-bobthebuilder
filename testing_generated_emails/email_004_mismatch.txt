@@ -1,0 +1,36 @@
+TO: docs@vitalsolutions.sg
+SUBJECT: [BOB] Shipping Document Mismatch - email_004
+GENERATED: 2026-09-19T19:27:01
+
+Dear Sender,
+
+BOB has detected a mismatch between the
+Shipping Instruction (SI) and Bill of Lading (BL)
+associated with your shipping request.
+
+SHIPMENT INFORMATION
+---------------------
+Email ID: email_004
+Original Subject: REQUEST BL DRAFT _ PO 26067_ COATED IVORY BOARD__138MT
+
+MISMATCH DETECTED
+-----------------
+
+Consignee
+SI: EAST BRIGHT FZ-LLC RAKEZ AMENITY CENTER; AL HAMRA INDUSTRIAL ZONE, RAK, UAE
+BL: UAB NOVAKOPA RAKEZ AMENITY CENTER; AL HAMRA INDUSTRIAL ZONE, RAK, UAE
+
+Notify Party
+SI: EAST BRIGHT FZ-LLC
+BL: UAB NOVAKOPA
+
+ACTION REQUIRED
+---------------
+Please review the above discrepancy and provide
+the necessary correction or clarification.
+
+This email was generated automatically by BOB
+(Bill of Lading Verification).
+
+Regards,
+BOB Document Verification System

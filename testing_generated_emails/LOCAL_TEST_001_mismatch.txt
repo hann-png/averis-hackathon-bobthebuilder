@@ -1,0 +1,36 @@
+TO: test.sender@example.com
+SUBJECT: [BOB] Shipping Document Mismatch - LOCAL_TEST_001
+GENERATED: 2026-09-19T19:07:21
+
+Dear Sender,
+
+BOB has detected a mismatch between the
+Shipping Instruction (SI) and Bill of Lading (BL)
+associated with your shipping request.
+
+SHIPMENT INFORMATION
+---------------------
+Email ID: LOCAL_TEST_001
+Original Subject: Shipping Documents
+
+MISMATCH DETECTED
+-----------------
+
+Port of Discharge
+SI: Port Klang
+BL: Singapore
+
+Gross Weight (kg)
+SI: 12500
+BL: 12750
+
+ACTION REQUIRED
+---------------
+Please review the above discrepancy and provide
+the necessary correction or clarification.
+
+This email was generated automatically by BOB
+(Bill of Lading Verification).
+
+Regards,
+BOB Document Verification System

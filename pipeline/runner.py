@@ -17,6 +17,7 @@ from pipeline.extractor_text import extract_text, ExtractionResult
 from pipeline.extractor_docs import extract_document
 from pipeline.comparator import compare
 from pipeline.escalation import check_escalation, check_missing_attachment, EscalationResult
+from pipeline.notification import process_mismatch_notification
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ def process_email(inbox, email: dict) -> dict:
     has_defect = len(defect_fields) > 0
     status = "MISMATCH" if has_defect else "OK"
 
-    return {
+    result = {
         "category": "BL_COMPARISON",
         "status": status,
         "review_reason": None,
@@ -156,6 +157,26 @@ def process_email(inbox, email: dict) -> dict:
         "defect_fields": defect_fields,
         "decided_by": decided_by,
     }
+
+    # Pure side effect: generate local notification draft if auto email is enabled
+    if status == "MISMATCH":
+        auto_email_enabled = os.getenv("BOB_AUTO_EMAIL_ENABLED", "").strip().lower() in ("true", "1", "yes")
+        if auto_email_enabled:
+            try:
+                process_mismatch_notification(
+                    auto_email_enabled=True,
+                    email_id=email_id,
+                    email_data=email,
+                    result=result,
+                    si_fields=si_fields,
+                    bl_fields=bl_fields,
+                    local_check=True,
+                    actually_send=False,
+                )
+            except Exception as e:
+                logger.warning(f"Could not generate mismatch notification for {email_id}: {e}")
+
+    return result
 
 
 def run_pipeline(data_dir: str = "data") -> dict:

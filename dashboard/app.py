@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from pipeline.extractor_docs import extract_document
 from pipeline.comparator import CANONICAL_FIELDS, _normalize_text, _normalize_port
+from pipeline.notification import generate_mismatch_email, save_email_locally
 
 st.set_page_config(
     page_title="Shipping Document Verification Dashboard",
@@ -208,7 +209,7 @@ with right_col:
 
         st.markdown("### Document Inspection & Comparison")
 
-        tab1, tab2, tab3 = st.tabs(["Field Comparison", "Email Content", "Raw Attachments"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Field Comparison", "Email Content", "Raw Attachments", "📧 Mismatch Notification Draft"])
 
         with tab1:
             if item.get("category") != "BL_COMPARISON":
@@ -281,3 +282,39 @@ with right_col:
                             st.code(fp.read(), language="text")
                     else:
                         st.info(f"Binary attachment ({att_file.suffix}). Extracted via specialized parser.")
+
+        with tab4:
+            if item.get("status") != "MISMATCH":
+                st.info(f"Auto mismatch draft notifications are only generated for confirmed mismatches. This email status is `{item.get('status')}`.")
+            elif len(atts) < 2:
+                st.info("Insufficient attachments available to generate discrepancy details.")
+            else:
+                si_path = ROOT_DIR / "data" / atts[0]
+                bl_path = ROOT_DIR / "data" / atts[1]
+                if "_BL." in str(si_path) and "_SI." in str(bl_path):
+                    si_path, bl_path = bl_path, si_path
+
+                si_res = extract_document(str(si_path))
+                bl_res = extract_document(str(bl_path))
+
+                draft = generate_mismatch_email(
+                    email_id=selected_eid,
+                    email_data=email_data,
+                    result=item,
+                    si_fields=si_res.fields,
+                    bl_fields=bl_res.fields,
+                )
+
+                if not draft:
+                    st.warning("Could not identify original sender address from email metadata.")
+                else:
+                    st.markdown(f"**To (Original Sender):** `{draft['to']}`")
+                    st.markdown(f"**Subject:** `{draft['subject']}`")
+                    st.markdown(f"**Generated:** `{draft['generated_at']}`")
+                    st.text_area("Notification Draft Body", draft["body"], height=320)
+
+                    # Only local save button — structural safety rail prevents accidental real sending
+                    if st.button("💾 Generate / Save Draft Locally", key=f"save_draft_{selected_eid}"):
+                        saved_info = save_email_locally(draft, selected_eid)
+                        st.success(f"Draft notification saved locally to: `{saved_info.get('path')}`")
+
