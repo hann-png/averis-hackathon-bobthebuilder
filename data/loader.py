@@ -20,8 +20,7 @@ No third-party dependencies for the plain-text path (only stdlib). Reading
 PDF/DOCX/XLSX attachments is up to your pipeline — see read_bytes().
 
 You do NOT have ground truth. Produce a submission dict shaped like
-sample_submission.json and either score it with score_cli.py (if organizers
-gave you a ground_truth.json) or POST it to the server's /submit.
+sample_submission.json and POST it to the server's /submit.
 """
 import json
 import os

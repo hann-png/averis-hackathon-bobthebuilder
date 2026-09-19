@@ -291,6 +291,12 @@ def send_mismatch_email(
     """
     Send an already-generated email using SMTP.
 
+    CRITICAL SAFETY RAIL:
+    Actual transmission requires the environment variable:
+        BOB_ALLOW_REAL_SEND=true
+    If unset or false, transmission is structurally blocked to prevent accidental
+    outbound emails to addresses found in sample datasets.
+
     SMTP configuration is read from environment variables:
 
         BOB_SMTP_HOST
@@ -299,6 +305,15 @@ def send_mismatch_email(
         BOB_SMTP_PASSWORD
         BOB_SMTP_FROM
     """
+
+    # Hard Safety Rail: structurally disable outbound emails unless explicitly allowed
+    allow_real_send = os.getenv("BOB_ALLOW_REAL_SEND", "").strip().lower() in ("true", "1", "yes")
+    if not allow_real_send:
+        return {
+            "sent": False,
+            "reason": "real_sending_disabled_by_safety_rail",
+            "message": "Outbound email transmission is structurally blocked by safety rail. Set BOB_ALLOW_REAL_SEND=true to enable.",
+        }
 
     smtp_host = os.getenv(
         "BOB_SMTP_HOST"

@@ -1,6 +1,6 @@
-TO: test.sender@example.com
-SUBJECT: [BOB] Shipping Document Mismatch - LOCAL_TEST_001
-GENERATED: 2026-09-19T19:07:21
+TO: docs@vitalsolutions.sg
+SUBJECT: [BOB] Shipping Document Mismatch - email_004
+GENERATED: 2026-09-19T19:27:01
 
 Dear Sender,
 
@@ -10,19 +10,19 @@ associated with your shipping request.
 
 SHIPMENT INFORMATION
 ---------------------
-Email ID: LOCAL_TEST_001
-Original Subject: Shipping Documents
+Email ID: email_004
+Original Subject: REQUEST BL DRAFT _ PO 26067_ COATED IVORY BOARD__138MT
 
 MISMATCH DETECTED
 -----------------
 
-Port of Discharge
-SI: Port Klang
-BL: Singapore
+Consignee
+SI: EAST BRIGHT FZ-LLC RAKEZ AMENITY CENTER; AL HAMRA INDUSTRIAL ZONE, RAK, UAE
+BL: UAB NOVAKOPA RAKEZ AMENITY CENTER; AL HAMRA INDUSTRIAL ZONE, RAK, UAE
 
-Gross Weight (kg)
-SI: 12500
-BL: 12750
+Notify Party
+SI: EAST BRIGHT FZ-LLC
+BL: UAB NOVAKOPA
 
 ACTION REQUIRED
 ---------------
