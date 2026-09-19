@@ -1,5 +1,5 @@
 TO: test.sender@example.com
-SUBJECT: [BOB] Shipping Document Mismatch - LOCAL_TEST_001
+SUBJECT: [BOB] Shipping Document Mismatch - LOCAL_TEST_006
 GENERATED: 2026-09-19T17:18:36
 
 Dear Sender,
@@ -10,8 +10,8 @@ associated with your shipping request.
 
 SHIPMENT INFORMATION
 ---------------------
-Email ID: LOCAL_TEST_001
-Original Subject: Shipping Documents
+Email ID: LOCAL_TEST_006
+Original Subject: SI and BL Verification
 
 MISMATCH DETECTED
 -----------------
@@ -23,6 +23,10 @@ BL: Singapore
 Gross Weight (kg)
 SI: 12500
 BL: 12750
+
+Container Count
+SI: 5
+BL: 5
 
 ACTION REQUIRED
 ---------------

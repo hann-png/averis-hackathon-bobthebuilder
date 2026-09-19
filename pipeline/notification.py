@@ -476,10 +476,24 @@ def process_mismatch_notification(
 
     return response
 
-#Run a local test when this script is executed directly.
+# Run a local test when this script is executed directly.
+def clear_local_test_files():
+    """
+    Remove previous locally generated test emails.
+    """
+
+    if not LOCAL_EMAIL_DIR.exists():
+        return
+
+    for file_path in LOCAL_EMAIL_DIR.iterdir():
+
+        if file_path.is_file():
+            file_path.unlink()
+
+
 def run_local_test():
     """
-    Run a standalone local test without:
+    Run standalone notification tests without:
     - runner.py
     - main application
     - Docker
@@ -487,90 +501,209 @@ def run_local_test():
     - external services
     """
 
-    print("=" * 60)
+    print("=" * 70)
     print("BOB NOTIFICATION LOCAL TEST")
-    print("=" * 60)
+    print("=" * 70)
 
-    email_data = {
-        "sender": "test.sender@example.com",
-        "subject": "Shipping Instruction and Bill of Lading",
-    }
+    # Remove files from previous test runs.
+    clear_local_test_files()
 
-    result = {
-        "status": "MISMATCH",
-        "defect_fields": [
-            "port_of_discharge",
-            "gross_weight_kg",
-        ],
-    }
+    test_sender = "test.sender@example.com"
 
     si_fields = {
         "port_of_discharge": "Port Klang",
         "gross_weight_kg": "12500",
+        "container_count": "5",
     }
 
     bl_fields = {
         "port_of_discharge": "Singapore",
         "gross_weight_kg": "12750",
+        "container_count": "5",
     }
 
-    print("\n[TEST 1] Auto email ENABLED")
-    print("-" * 60)
+    tests = [
+        {
+            "name": "Mismatch with auto email ENABLED",
+            "email_id": "LOCAL_TEST_001",
+            "auto_email_enabled": True,
+            "email_data": {
+                "sender": test_sender,
+                "subject": "Shipping Documents",
+            },
+            "result": {
+                "status": "MISMATCH",
+                "defect_fields": [
+                    "port_of_discharge",
+                    "gross_weight_kg",
+                ],
+            },
+            "expected_triggered": True,
+            "expected_file": True,
+        },
+        {
+            "name": "Mismatch with auto email DISABLED",
+            "email_id": "LOCAL_TEST_002",
+            "auto_email_enabled": False,
+            "email_data": {
+                "sender": test_sender,
+                "subject": "Shipping Documents",
+            },
+            "result": {
+                "status": "MISMATCH",
+                "defect_fields": [
+                    "port_of_discharge",
+                ],
+            },
+            "expected_triggered": False,
+            "expected_file": False,
+        },
+        {
+            "name": "No mismatch with auto email ENABLED",
+            "email_id": "LOCAL_TEST_003",
+            "auto_email_enabled": True,
+            "email_data": {
+                "sender": test_sender,
+                "subject": "Shipping Documents",
+            },
+            "result": {
+                "status": "OK",
+                "defect_fields": [],
+            },
+            "expected_triggered": False,
+            "expected_file": False,
+        },
+        {
+            "name": "Needs review with auto email ENABLED",
+            "email_id": "LOCAL_TEST_004",
+            "auto_email_enabled": True,
+            "email_data": {
+                "sender": test_sender,
+                "subject": "Shipping Documents",
+            },
+            "result": {
+                "status": "NEEDS_REVIEW",
+                "defect_fields": [],
+            },
+            "expected_triggered": False,
+            "expected_file": False,
+        },
+        {
+            "name": "Mismatch with missing sender",
+            "email_id": "LOCAL_TEST_005",
+            "auto_email_enabled": True,
+            "email_data": {
+                "subject": "Shipping Documents",
+            },
+            "result": {
+                "status": "MISMATCH",
+                "defect_fields": [
+                    "port_of_discharge",
+                ],
+            },
+            "expected_triggered": True,
+            "expected_file": False,
+        },
+        {
+            "name": "Mismatch with multiple fields",
+            "email_id": "LOCAL_TEST_006",
+            "auto_email_enabled": True,
+            "email_data": {
+                "sender": test_sender,
+                "subject": "SI and BL Verification",
+            },
+            "result": {
+                "status": "MISMATCH",
+                "defect_fields": [
+                    "port_of_discharge",
+                    "gross_weight_kg",
+                    "container_count",
+                ],
+            },
+            "expected_triggered": True,
+            "expected_file": True,
+        },
+    ]
 
-    response = process_mismatch_notification(
-        auto_email_enabled=True,
-        email_id="LOCAL_TEST_001",
-        email_data=email_data,
-        result=result,
-        si_fields=si_fields,
-        bl_fields=bl_fields,
-        local_check=True,
-        actually_send=False,
+    passed = 0
+    failed = 0
+
+    for number, test in enumerate(tests, start=1):
+
+        print()
+        print(f"[TEST {number}] {test['name']}")
+        print("-" * 70)
+
+        response = process_mismatch_notification(
+            auto_email_enabled=test["auto_email_enabled"],
+            email_id=test["email_id"],
+            email_data=test["email_data"],
+            result=test["result"],
+            si_fields=si_fields,
+            bl_fields=bl_fields,
+            local_check=True,
+            actually_send=False,
+        )
+
+        triggered_correct = (
+            response["triggered"]
+            == test["expected_triggered"]
+        )
+
+        file_path = (
+            LOCAL_EMAIL_DIR
+            / f"{test['email_id']}_mismatch.txt"
+        )
+
+        file_exists = file_path.exists()
+
+        file_correct = (
+            file_exists
+            == test["expected_file"]
+        )
+
+        if triggered_correct and file_correct:
+
+            print("PASS")
+            passed += 1
+
+        else:
+
+            print("FAIL")
+            failed += 1
+
+        print(f"Response: {response}")
+        print(f"Expected triggered: {test['expected_triggered']}")
+        print(f"Actual triggered: {response['triggered']}")
+        print(f"Expected file: {test['expected_file']}")
+        print(f"Actual file: {file_exists}")
+
+    print()
+    print("=" * 70)
+    print("LOCAL TEST SUMMARY")
+    print("=" * 70)
+
+    print(f"Tests passed: {passed}")
+    print(f"Tests failed: {failed}")
+    print(f"Total tests: {len(tests)}")
+
+    print()
+
+    if failed == 0:
+
+        print("ALL TESTS PASSED")
+
+    else:
+
+        print("SOME TESTS FAILED")
+
+    print()
+    print(
+        f"Test email files are stored in: "
+        f"{LOCAL_EMAIL_DIR}"
     )
 
-    print(response)
-
-    print("\n[TEST 2] Auto email DISABLED")
-    print("-" * 60)
-
-    response_disabled = process_mismatch_notification(
-        auto_email_enabled=False,
-        email_id="LOCAL_TEST_002",
-        email_data=email_data,
-        result=result,
-        si_fields=si_fields,
-        bl_fields=bl_fields,
-        local_check=True,
-        actually_send=False,
-    )
-
-    print(response_disabled)
-
-    print("\n[TEST 3] No mismatch")
-    print("-" * 60)
-
-    no_mismatch_result = {
-        "status": "OK",
-        "defect_fields": [],
-    }
-
-    response_no_mismatch = process_mismatch_notification(
-        auto_email_enabled=True,
-        email_id="LOCAL_TEST_003",
-        email_data=email_data,
-        result=no_mismatch_result,
-        si_fields=si_fields,
-        bl_fields=bl_fields,
-        local_check=True,
-        actually_send=False,
-    )
-
-    print(response_no_mismatch)
-
-    print("\n" + "=" * 60)
-    print("LOCAL TEST COMPLETED")
-    print("=" * 60)
-    print("\nCheck the generated_emails folder for the test email.")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
