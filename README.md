@@ -41,24 +41,26 @@ This automatically posts your results to `/submit`, validates schema compliance,
 
 ```mermaid
 flowchart TD
-    A[Incoming Email Inbox] --> B[Email Classifier<br/>rules + Gemini fallback]
+    A[Incoming Email Inbox] --> B0[Spam Pre-Filter<br/>Keyword & Domain Fast Filter]
+    B0 -->|Obvious Spam| C1[SPAM - OK]
+    B0 -->|Candidate Email| B[AI Email Classifier<br/>Gemini 2.0 Flash Primary<br/>Rule Fallback]
     
-    B -->|SPAM| C1[SPAM • OK]
-    B -->|GENERAL| C2[GENERAL • OK]
-    B -->|INVOICE_QUERY| C3[INVOICE_QUERY • OK]
-    B -->|SI_REQUEST| C4[SI_REQUEST • OK]
-    B -->|BL_COMPARISON| D[Escalation Gate 1<br/>Attachment Presence]
+    B -->|SPAM| C1
+    B -->|GENERAL| C2[GENERAL - OK]
+    B -->|INVOICE_QUERY| C3[INVOICE_QUERY - OK]
+    B -->|SI_REQUEST| C4[SI_REQUEST - OK]
+    B -->|BL_COMPARISON| D[Escalation Gate 1<br/>Deterministic Attachment Check]
     
     D -->|< 2 atts & compare req| E1[NEEDS_REVIEW<br/>missing_attachment]
     D -->|0 atts draft request| E2[Status OK]
-    D -->|SI + BL Available| F[Multi-Format Extractor<br/>.txt, .pdf, .docx, .xlsx]
+    D -->|SI + BL Available| F[Multi-Format Extractor<br/>Gemini AI Primary Extraction<br/>Synonym Dict Cross-Check]
     
     F -->|Detect Non-BL Doc| G1[NEEDS_REVIEW<br/>wrong_doc_type]
     F -->|Corrupt / Empty Scan| G2[NEEDS_REVIEW<br/>unreadable]
-    F -->|Extract 7 Canonical Fields| H[Escalation Gate 2<br/>Missing Value / Placeholder Check]
+    F -->|Extract 7 Canonical Fields| H[Escalation Gate 2<br/>Deterministic Missing / Disagreement Check]
     
-    H -->|Has Blank / TBA / N/A| G3[NEEDS_REVIEW<br/>missing_value]
-    H -->|All Fields Extracted| I[Deterministic Comparator<br/>Pure Python String & Numeric Matching]
+    H -->|Blank / TBA / Conflict| G3[NEEDS_REVIEW<br/>missing_value]
+    H -->|All Fields Clean| I[Deterministic Comparator<br/>Pure Python String & Numeric Matching<br/>(Pure Deterministic Python)]
     
     I -->|Field Discrepancy Found| J1[MISMATCH<br/>has_defect: true]
     I -->|All 7 Fields Match| J2[OK<br/>has_defect: false]
