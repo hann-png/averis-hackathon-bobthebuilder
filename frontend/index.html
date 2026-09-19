@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Shipping document verification and human review dashboard">
   <meta name="color-scheme" content="dark light">
-  <title>Verity — Shipping Document Verification</title>
+  <title>BOB — Shipping Document Verification</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -15,11 +15,11 @@
   <div class="app-shell">
     <aside class="sidebar glass-panel" id="sidebar">
       <div class="brand-row">
-        <a class="brand" href="#" aria-label="Verity home">
+        <a class="brand" href="#" aria-label="BOB home">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img"><path d="M5.8 7.5h12.4l1.6 8.2a2 2 0 0 1-2 2.4H6.2a2 2 0 0 1-2-2.4l1.6-8.2Z"/><path d="M9 7.5V5.7A3 3 0 0 1 12 3a3 3 0 0 1 3 2.7v1.8M8.5 12h7M8.5 15h4"/></svg>
           </span>
-          <span><strong>Verity</strong><small>Document intelligence</small></span>
+          <span><strong>BOB</strong><small>Document intelligence</small></span>
         </a>
         <button class="icon-button mobile-only" id="closeSidebar" aria-label="Close menu">
           <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -84,6 +84,10 @@
         </div>
         <div class="topbar-actions">
           <div class="sync-state desktop-only"><span></span><span><small>Last sync</small><strong id="lastSync">Just now</strong></span></div>
+          <a href="/docs" target="_blank" class="docs-btn" title="View Interactive API Documentation" style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:inherit; text-decoration:none; padding:7px 12px; border:1px solid var(--border); border-radius:8px; background:rgba(255,255,255,0.04); transition:all 0.2s;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
+            <span>API Docs</span>
+          </a>
           <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh data" title="Refresh data">
             <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5l2-2.5"/></svg>
           </button>

@@ -106,6 +106,19 @@ def test_safety_rail_blocks_unauthorized_send():
     assert data.get("reason") == "real_sending_disabled_by_safety_rail"
 
 
+def test_email_confidence_endpoint():
+    """Verify extraction confidence scoring endpoint."""
+    response = client.get("/email/email_004/confidence")
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("email_id") == "email_004"
+    assert "si" in data
+    assert "bl" in data
+    assert "confidence" in data["si"]
+    assert "overall_confidence" in data["si"]
+    assert isinstance(data["si"]["overall_confidence"], (int, float))
+
+
 if __name__ == "__main__":
     print("Running test_api.py directly...")
     test_health_endpoint()
@@ -122,4 +135,6 @@ if __name__ == "__main__":
     print("[PASS] test_email_notification_local_save_action")
     test_safety_rail_blocks_unauthorized_send()
     print("[PASS] test_safety_rail_blocks_unauthorized_send")
+    test_email_confidence_endpoint()
+    print("[PASS] test_email_confidence_endpoint")
     print("\nALL API TESTS PASSED SUCCESSFULLY!")
