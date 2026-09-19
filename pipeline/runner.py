@@ -180,7 +180,7 @@ def run_pipeline(data_dir: str = "data") -> dict:
     for email in emails:
         email_id = email["email_id"]
         result = process_email(inbox, email)
-        submission[email_id] = result
+        submission[email_id] = {k: v for k, v in result.items() if k != 'decided_by'}
 
         stats["total"] += 1
         cat = result["category"]

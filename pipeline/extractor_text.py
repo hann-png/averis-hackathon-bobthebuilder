@@ -179,7 +179,7 @@ def _get_gemini_client():
             from dotenv import load_dotenv
             load_dotenv()
         except ImportError:
-            pass
+            logger.warning("python-dotenv is not installed; .env file cannot be loaded automatically")
         from google import genai
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
