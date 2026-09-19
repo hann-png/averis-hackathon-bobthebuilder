@@ -34,11 +34,11 @@
         </button>
         <button class="nav-item" type="button" data-nav="mismatch" data-focus-status="MISMATCH">
           <svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg>
-          <span>Mismatches</span><span class="nav-count" id="navMismatchCount">46</span>
+          <span>Mismatches</span><span class="nav-count" id="navMismatchCount">?</span>
         </button>
         <button class="nav-item" type="button" data-nav="review" data-focus-status="NEEDS_REVIEW">
           <svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M9.5 9a2.7 2.7 0 1 1 4.6 2c-1.4 1.1-2.1 1.6-2.1 3M12 18h.01"/></svg>
-          <span>Review queue</span><span class="nav-count amber" id="navReviewCount">20</span>
+          <span>Review queue</span><span class="nav-count amber" id="navReviewCount">?</span>
         </button>
         <button class="nav-item" type="button" data-nav="verified" data-focus-status="OK">
           <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
@@ -55,7 +55,7 @@
             <strong>100%</strong>
           </div>
           <div class="progress-track"><span></span></div>
-          <p>520 of 520 emails processed</p>
+          <p id="pipelineProgressLabel">Awaiting submission data</p>
         </div>
       </div>
 
@@ -100,23 +100,23 @@
       <section class="stats-grid" aria-label="Verification statistics">
         <article class="stat-card glass-panel reveal" style="--delay: 0ms">
           <div class="stat-top"><span>Total emails</span><span class="stat-icon neutral"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg></span></div>
-          <div class="stat-value" id="totalStat">520</div>
+          <div class="stat-value" id="totalStat">?</div>
           <p>Complete dataset</p>
         </article>
         <article class="stat-card glass-panel reveal" style="--delay: 60ms">
           <div class="stat-top"><span>Mismatches</span><span class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg></span></div>
-          <div class="stat-value" id="mismatchStat">46</div>
-          <p><span class="trend red" id="mismatchRate">8.8%</span> of all emails</p>
+          <div class="stat-value" id="mismatchStat">?</div>
+          <p><span class="trend red" id="mismatchRate">?</span> of all emails</p>
         </article>
         <article class="stat-card glass-panel reveal" style="--delay: 120ms">
           <div class="stat-top"><span>Needs review</span><span class="stat-icon amber"><svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M12 8v4m0 4h.01"/></svg></span></div>
-          <div class="stat-value" id="reviewStat">20</div>
-          <p><span class="trend amber" id="reviewRate">3.8%</span> escalated safely</p>
+          <div class="stat-value" id="reviewStat">?</div>
+          <p><span class="trend amber" id="reviewRate">?</span> escalated safely</p>
         </article>
         <article class="stat-card glass-panel reveal" style="--delay: 180ms">
           <div class="stat-top"><span>Verified clean</span><span class="stat-icon green"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>
-          <div class="stat-value" id="cleanStat">454</div>
-          <p><span class="trend green" id="cleanRate">87.3%</span> cleared automatically</p>
+          <div class="stat-value" id="cleanStat">?</div>
+          <p><span class="trend green" id="cleanRate">?</span> cleared automatically</p>
         </article>
       </section>
 
