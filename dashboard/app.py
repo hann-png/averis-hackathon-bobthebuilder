@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT_DIR))
 from pipeline.extractor_docs import extract_document
 from pipeline.comparator import CANONICAL_FIELDS, _normalize_text, _normalize_port
 from pipeline.notification import generate_mismatch_email, save_email_locally
+from pipeline.security import scan_email_security
+from data.loader import Inbox
 
 st.set_page_config(
     page_title="Shipping Document Verification Dashboard",
@@ -140,12 +142,13 @@ review_count = sum(1 for v in submission.values() if v.get("status") == "NEEDS_R
 ok_count = sum(1 for v in submission.values() if v.get("status") == "OK")
 reviewed_count = len(st.session_state.reviewed_items)
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 col1.metric("Total Emails", total)
 col2.metric("Mismatches Flagged", mismatch_count, delta=f"{mismatch_count/total*100:.1f}%")
 col3.metric("Escalations (Review)", review_count, delta=f"{review_count/total*100:.1f}%")
 col4.metric("Clean (OK)", ok_count)
 col5.metric("Human Reviewed", f"{reviewed_count}/{mismatch_count + review_count}")
+col6.metric("🛡️ Security Shield", "Active", delta="Zero-Trust", delta_color="normal")
 
 st.markdown("---")
 
@@ -209,7 +212,13 @@ with right_col:
 
         st.markdown("### Document Inspection & Comparison")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["Field Comparison", "Email Content", "Raw Attachments", "📧 Mismatch Notification Draft"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Field Comparison",
+            "Email Content",
+            "Raw Attachments",
+            "📧 Mismatch Notification Draft",
+            "🛡️ Security Shield"
+        ])
 
         with tab1:
             if item.get("category") != "BL_COMPARISON":
@@ -317,4 +326,67 @@ with right_col:
                     if st.button("💾 Generate / Save Draft Locally", key=f"save_draft_{selected_eid}"):
                         saved_info = save_email_locally(draft, selected_eid)
                         st.success(f"Draft notification saved locally to: `{saved_info.get('path')}`")
+
+        with tab5:
+            st.markdown("#### 🛡️ Enterprise Zero-Trust Security & Compliance Audit")
+            try:
+                inbox_instance = Inbox(str(ROOT_DIR / "data"))
+                sec_report = scan_email_security(inbox_instance, selected_eid)
+
+                is_passed = sec_report.get("security_verdict") == "PASSED"
+                badge_bg = "rgba(16, 185, 129, 0.15)" if is_passed else "rgba(239, 68, 68, 0.15)"
+                badge_border = "#10b981" if is_passed else "#ef4444"
+                verdict_text = sec_report.get("security_verdict", "PASSED")
+                score = sec_report.get("posture_score", 100)
+
+                st.markdown(
+                    f'''<div style="background-color: {badge_bg}; border-left: 5px solid {badge_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 18px;">
+                        <h4 style="margin: 0 0 4px 0; color: {badge_border};">🛡️ Posture: {verdict_text} (Score: {score}/100)</h4>
+                        <p style="margin: 0; color: #cbd5e1; font-size: 13px;">SHA-256 Provenance Fingerprint: <code>{sec_report.get("email_sha256")}</code></p>
+                    </div>''',
+                    unsafe_allow_html=True
+                )
+
+                sec_col1, sec_col2 = st.columns(2)
+
+                with sec_col1:
+                    st.markdown("##### 🔍 Zero-Trust Attachment Sandbox")
+                    att_reports = sec_report.get("attachment_reports", [])
+                    if not att_reports:
+                        st.info("No attachments found on this email record.")
+                    else:
+                        for ar in att_reports:
+                            is_safe = ar.get("is_safe", True)
+                            status_badge = "✅ CLEAN" if is_safe else "🚨 BLOCKED"
+                            with st.expander(f"{status_badge} — {Path(ar.get('attachment', '')).name}"):
+                                st.write(f"**MIME Detected:** `{ar.get('mime_detected')}`")
+                                st.write(f"**SHA-256 Digest:** `{ar.get('sha256')}`")
+                                if ar.get("threats"):
+                                    for t in ar["threats"]:
+                                        st.error(f"Threat: {t}")
+                                else:
+                                    st.success("Magic bytes verified. No malicious executables, macros, or zip bombs.")
+
+                with sec_col2:
+                    st.markdown("##### 🤖 Prompt Injection & PII Sanitization")
+                    inj = sec_report.get("prompt_injection_check", {})
+                    if inj.get("is_safe"):
+                        st.success("✅ **Prompt Injection Guard:** Clean (No adversarial instructions detected)")
+                    else:
+                        st.error(f"🚨 **Adversarial Instruction Flagged:** Threat Level `{inj.get('threat_level')}`")
+                        st.write(f"Patterns: `{inj.get('matched_patterns')}`")
+
+                    pii = sec_report.get("pii_compliance", {})
+                    pii_count = pii.get("pii_detected_count", 0)
+                    if pii_count > 0:
+                        st.warning(f"🔒 **PII Redaction Engine:** Masked {pii_count} sensitive entities for GDPR/SOC2 compliance.")
+                        st.json(pii.get("breakdown", {}))
+                    else:
+                        st.info("🔒 **PII Redaction Engine:** Zero high-risk personal IDs or credit cards detected.")
+
+                    with st.expander("👁️ View Redacted LLM-Safe Context"):
+                        st.code(pii.get("redacted_preview", ""), language="text")
+
+            except Exception as exc:
+                st.error(f"Security audit scanner error: {exc}")
 

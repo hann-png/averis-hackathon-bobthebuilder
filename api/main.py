@@ -25,6 +25,11 @@ from pipeline.notification import (
     process_mismatch_notification,
     save_email_locally,
 )
+from pipeline.security import (
+    scan_email_security,
+    PromptInjectionGuard,
+    PIIRedactor,
+)
 from data.loader import Inbox
 
 logger = logging.getLogger(__name__)
@@ -385,6 +390,46 @@ def trigger_notification_action(
         actually_send=payload.actually_send,
     )
     return response
+
+
+@app.get("/email/{email_id}/security")
+def get_email_security_audit(email_id: str, data_dir: str = DATA_DIR):
+    """
+    Enterprise Zero-Trust Security & Compliance Audit for a specific email.
+    Evaluates:
+    - Attachment magic bytes & anti-spoofing verification
+    - Zip-bomb and malicious executable detection
+    - Adversarial prompt injection scans
+    - PII & financial data redaction audit
+    - SHA-256 cryptographic provenance fingerprints
+    """
+    inbox = Inbox(data_dir)
+    audit = scan_email_security(inbox, email_id)
+    if "error" in audit:
+        raise HTTPException(status_code=404, detail=audit["error"])
+    return audit
+
+
+class SecurityScanTextPayload(BaseModel):
+    text: str
+
+
+@app.post("/security/scan-text")
+def scan_text_security(payload: SecurityScanTextPayload):
+    """
+    Scan arbitrary text or document extract for prompt injection threats and PII.
+    Returns prompt injection threat level and sanitized PII-masked text.
+    """
+    injection_report = PromptInjectionGuard.scan_text(payload.text)
+    redacted_text, pii_stats = PIIRedactor.redact(payload.text)
+    return {
+        "is_safe": injection_report["is_safe"],
+        "threat_level": injection_report["threat_level"],
+        "matched_threats": injection_report["matched_patterns"],
+        "pii_redacted_count": pii_stats["total_redactions"],
+        "pii_breakdown": pii_stats["by_type"],
+        "sanitized_text": redacted_text,
+    }
 
 
 @app.get("/stats")
