@@ -188,7 +188,6 @@
           <div class="summary-banner mismatch" id="summaryBanner">
             <div class="summary-icon"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 4.6 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 4.6a2 2 0 0 0-3.4 0Z"/></svg></div>
             <div><strong id="summaryTitle">2 discrepancies detected</strong><p id="summaryText">Consignee and notify party require attention before this draft is finalized.</p></div>
-            <span class="confidence-pill">High confidence</span>
           </div>
 
           <div class="tab-bar" role="tablist" aria-label="Document details">
@@ -196,6 +195,7 @@
             <button type="button" role="tab" data-tab="email">Email content</button>
             <button type="button" role="tab" data-tab="attachments">Attachments <span id="attachmentTabCount">2</span></button>
             <button type="button" role="tab" data-tab="audit">Audit trail</button>
+            <button type="button" role="tab" class="draft-tab-button" data-tab="draft">Draft response <span>Draft</span></button>
           </div>
 
           <div class="tab-content active" id="comparisonTab" data-panel="comparison">
@@ -221,6 +221,10 @@
           <div class="tab-content" id="auditTab" data-panel="audit">
             <div class="timeline" id="auditTimeline"></div>
           </div>
+
+          <div class="tab-content" id="draftTab" data-panel="draft" aria-live="polite">
+            <div id="draftComposer"></div>
+          </div>
         </section>
       </section>
     </main>
@@ -236,7 +240,7 @@
 
   <script>
     window.SDOC_CONFIG = {
-      apiBase: "http://localhost:8080",
+      apiBase: window.location.pathname.startsWith("/app") ? window.location.origin : "http://localhost:8080",
       dataBase: "../data",
       submissionPath: "../submission.json"
     };

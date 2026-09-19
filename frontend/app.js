@@ -70,6 +70,7 @@
     emails: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_EMAIL]]),
     fields: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_FIELDS]]),
     reviewed: new Set(JSON.parse(localStorage.getItem("sdoc-reviewed") || "[]")),
+    drafts: new Map(),
     selectedId: "email_004",
     statusFilter: "FLAGGED",
     categoryFilter: "ALL",
@@ -97,11 +98,16 @@
     showToast.timer = setTimeout(() => toast.classList.remove("visible"), 2600);
   }
 
-  async function fetchJson(url, timeout = 2200) {
+  async function fetchJson(url, timeout = 2200, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { Accept: "application/json", ...(options.headers || {}) }
+      });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       return await response.json();
     } finally {
@@ -273,15 +279,120 @@
     const count = item.defect_fields?.length || 0;
     if (item.status === "MISMATCH") return {
       title: `${count} ${count === 1 ? "discrepancy" : "discrepancies"} detected`,
-      text: `${(item.defect_fields || []).map(titleCase).join(" and ")} ${count === 1 ? "requires" : "require"} attention before this draft is finalized.`,
-      confidence: "High confidence"
+      text: `${(item.defect_fields || []).map(titleCase).join(" and ")} ${count === 1 ? "requires" : "require"} attention before this draft is finalized.`
     };
     if (item.status === "NEEDS_REVIEW") return {
       title: "Human review required",
-      text: `The workflow stopped safely because of: ${titleCase(item.review_reason || "uncertain result")}.`,
-      confidence: "Escalated safely"
+      text: `The workflow stopped safely because of: ${titleCase(item.review_reason || "uncertain result")}.`
     };
-    return { title: "No mismatch detected", text: "All available comparison fields match the shipping instruction.", confidence: "Verified" };
+    return { title: "No mismatch detected", text: "All available comparison fields match the shipping instruction." };
+  }
+
+  function apiUrl(path) {
+    return `${String(CONFIG.apiBase || window.location.origin).replace(/\/$/, "")}${path}`;
+  }
+
+  function renderDraftLoading() {
+    $("#draftComposer").innerHTML = `<div class="draft-loading" aria-label="Loading response draft">
+      <div class="draft-loading-head"><span class="skeleton"></span><span class="skeleton"></span></div>
+      <span class="skeleton draft-loading-line"></span><span class="skeleton draft-loading-line short"></span>
+      <div class="skeleton draft-loading-body"></div>
+    </div>`;
+  }
+
+  function renderDraftError(message) {
+    $("#draftComposer").innerHTML = `<div class="draft-empty">
+      <span class="draft-empty-icon"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
+      <div><strong>Draft unavailable</strong><p>${escapeHtml(message || "The notification service could not be reached.")}</p></div>
+      <button class="secondary-button" type="button" data-draft-action="retry">Try again</button>
+    </div>`;
+  }
+
+  function renderDraft(draft) {
+    const fields = (draft.defect_fields || []).map(field => `<span>${escapeHtml(titleCase(field))}</span>`).join("");
+    const generatedDate = draft.generated_at ? new Date(draft.generated_at) : null;
+    const generatedAt = generatedDate && !Number.isNaN(generatedDate.getTime())
+      ? generatedDate.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+      : "Generated now";
+    $("#draftComposer").innerHTML = `<article class="draft-composer">
+      <header class="draft-composer-head">
+        <div class="draft-heading">
+          <span class="draft-mark"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h8l6 6v10.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z"/><path d="M14 3v6h6M8 14h8M8 17h5"/></svg></span>
+          <div><p class="eyebrow">Clarification email</p><h3>Response draft</h3></div>
+        </div>
+        <div class="draft-state"><span></span>Draft only · Not sent</div>
+      </header>
+
+      <div class="draft-evidence">
+        <div><strong>${(draft.defect_fields || []).length} ${(draft.defect_fields || []).length === 1 ? "field" : "fields"} included</strong><p>The detected differences are locked to the verification result.</p></div>
+        <div class="draft-field-chips">${fields}</div>
+      </div>
+
+      <div class="draft-address-row"><span>To</span><strong>${escapeHtml(draft.recipient || "Recipient unavailable")}</strong><i>Original sender</i></div>
+      <div class="draft-address-row"><span>Subject</span><strong>${escapeHtml(draft.subject || "Shipping document clarification")}</strong></div>
+      <div class="draft-body-wrap">
+        <div class="draft-body-toolbar"><span>Message</span><small>${escapeHtml(generatedAt)}</small></div>
+        <textarea id="draftBody" readonly spellcheck="false" aria-label="Generated response draft">${escapeHtml(draft.body || "")}</textarea>
+      </div>
+
+      <footer class="draft-actions">
+        <p><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>Saving creates a local draft only. No email will be sent.</p>
+        <div>
+          <button class="secondary-button" type="button" data-draft-action="regenerate"><svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5l2-2.5"/></svg>Regenerate</button>
+          <button class="secondary-button" type="button" data-draft-action="copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copy</button>
+          <button class="primary-button" type="button" data-draft-action="save"><svg viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5Z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg><span>Save draft</span></button>
+        </div>
+      </footer>
+    </article>`;
+  }
+
+  async function loadDraft(emailId, options = {}) {
+    const item = state.submission[emailId];
+    if (!item || item.status !== "MISMATCH") return;
+    if (!options.force && state.drafts.has(emailId)) {
+      renderDraft(state.drafts.get(emailId));
+      return;
+    }
+    renderDraftLoading();
+    try {
+      const draft = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/notification`), 8000);
+      if (state.selectedId !== emailId) return;
+      if (!draft.notification_eligible) throw new Error("This email is not eligible for a clarification draft.");
+      state.drafts.set(emailId, draft);
+      renderDraft(draft);
+    } catch (error) {
+      if (state.selectedId === emailId) renderDraftError(error.name === "AbortError" ? "The draft service took too long to respond." : error.message);
+    }
+  }
+
+  async function copyDraft() {
+    const draft = state.drafts.get(state.selectedId);
+    if (!draft) return;
+    const content = `To: ${draft.recipient || ""}\nSubject: ${draft.subject || ""}\n\n${draft.body || ""}`;
+    await navigator.clipboard?.writeText(content);
+    showToast("Response draft copied");
+  }
+
+  async function saveDraft(button) {
+    const emailId = state.selectedId;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.classList.add("is-loading");
+    $("span", button).textContent = "Saving…";
+    try {
+      const result = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/notification/send`), 10000, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actually_send: false, save_locally: true })
+      });
+      showToast(result.local_check?.saved ? "Draft saved locally" : "Draft prepared");
+    } catch (error) {
+      showToast(error.name === "AbortError" ? "Save request timed out" : "Could not save the draft", "error");
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      button.innerHTML = original;
+    }
   }
 
   function renderComparison(item, fields) {
@@ -348,7 +459,6 @@
     $("#summaryBanner").className = `summary-banner ${cls}`;
     $("#summaryTitle").textContent = copy.title;
     $("#summaryText").textContent = copy.text;
-    $(".confidence-pill").textContent = copy.confidence;
     $("#comparisonTabCount").textContent = item.defect_fields?.length || 0;
     $("#emailFrom").textContent = email.from || "Not available";
     $("#emailSubject").textContent = email.subject || "Not available";
@@ -358,6 +468,10 @@
     renderComparison(item, fields);
     renderAttachments(email);
     renderAudit(item);
+    const draftTabButton = $(".draft-tab-button");
+    draftTabButton.hidden = item.status !== "MISMATCH";
+    if (item.status !== "MISMATCH" && draftTabButton.classList.contains("active")) setTab("comparison");
+    if (item.status === "MISMATCH") loadDraft(emailId);
     if (!options.silent) $(".detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -443,6 +557,14 @@
       renderQueue();
     }));
     $$(".tab-bar button").forEach(button => button.addEventListener("click", () => setTab(button.dataset.tab)));
+    $("#draftComposer").addEventListener("click", event => {
+      const button = event.target.closest("[data-draft-action]");
+      if (!button) return;
+      const action = button.dataset.draftAction;
+      if (action === "copy") copyDraft();
+      if (action === "save") saveDraft(button);
+      if (["retry", "regenerate"].includes(action)) loadDraft(state.selectedId, { force: true });
+    });
     $$(".nav-item[data-nav]").forEach(button => button.addEventListener("click", () => {
       const status = button.dataset.focusStatus || "FLAGGED";
       setActiveNav(button);
