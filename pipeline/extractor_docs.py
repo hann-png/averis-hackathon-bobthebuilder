@@ -278,8 +278,6 @@ def extract_from_pdf(file_source) -> ExtractionResult:
         )
 
         if not text.strip() or len(text.strip()) < 15:
-            if raw_bytes:
-                return _extract_pdf_via_vision(raw_bytes)
             return ExtractionResult(
                 fields={},
                 doc_type=None,

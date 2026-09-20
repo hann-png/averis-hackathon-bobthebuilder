@@ -74,6 +74,35 @@ def is_obvious_spam(email: dict) -> bool:
     return False
 
 
+GENERAL_PATTERNS = [
+    r"berthing\s+report",
+    r"update\s+summary",
+    r"_rpa_.*billing\s+process\s+completed",
+    r"time\s+off\s+request",
+    r"delivery\s+planning",
+    r"submit\s+si\s*&\s*aed",
+    r"wishing\s+everyone\s+a\s+happy",
+    r"happy\s+.*new\s+year",
+    r"sla\s+.*reminder",
+    r"pending\s+bl\s+release",
+    r"miss\s+connection",
+]
+
+
+def is_obvious_general(email: dict) -> bool:
+    """
+    Pre-filter for automated system notifications, HR notices, and daily reports
+    that belong strictly to GENERAL.
+    """
+    subj = email.get("subject", "")
+    body = email.get("body", "")
+    combined = f"{subj} {body}"
+    for pat in GENERAL_PATTERNS:
+        if re.search(pat, combined, re.I):
+            return True
+    return False
+
+
 def classify_by_rules(email: dict) -> str | None:
     """
     Fallback classification using keyword/regex rules when Gemini is unavailable.
@@ -90,18 +119,7 @@ def classify_by_rules(email: dict) -> str | None:
         return "SPAM"
 
     # 2. GENERAL (Internal HR notices, reports, RPA alerts, holidays, delivery planning)
-    if (
-        re.search(r"berthing\s+report", combined, re.I)
-        or re.search(r"update\s+summary", subj, re.I)
-        or re.search(r"_rpa_.*billing\s+process\s+completed", subj, re.I)
-        or re.search(r"time\s+off\s+request", subj, re.I)
-        or re.search(r"delivery\s+planning", subj, re.I)
-        or re.search(r"submit\s+si\s*&\s*aed", subj, re.I)
-        or re.search(r"wishing\s+everyone\s+a\s+happy", combined, re.I)
-        or re.search(r"happy\s+.*new\s+year", combined, re.I)
-        or re.search(r"sla.*reminder", combined, re.I)
-        or re.search(r"pending\s+bl\s+release", combined, re.I)
-    ):
+    if is_obvious_general(email):
         return "GENERAL"
 
     # 3. INVOICE_QUERY (Finance, charges, missing GR, billing)
@@ -205,7 +223,11 @@ def classify(email: dict) -> tuple[str, str]:
     if is_obvious_spam(email):
         return "SPAM", "rule"
 
-    # 2. Primary path: Gemini API
+    # 2. Pre-filter for operational digests, HR notices, and automated status reminders
+    if is_obvious_general(email):
+        return "GENERAL", "rule"
+
+    # 3. Primary path: Gemini API
     try:
         cat = classify_by_gemini(email)
         return cat, "gemini"

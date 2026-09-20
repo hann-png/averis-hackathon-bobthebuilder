@@ -38,6 +38,7 @@ def _normalize_text(value: str) -> str:
     if not value:
         return ""
     v = value.strip().upper()
+    v = re.sub(r'^(TO\s+THE\s+ORDER\s+OF|TO\s+ORDER\s+OF|TO\s+ORDER)\s*[:\-]?\s*', '', v)
     v = re.sub(r'[^\w\s]', ' ', v)
     return ' '.join(v.split())
 
