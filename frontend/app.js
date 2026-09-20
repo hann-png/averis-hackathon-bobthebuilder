@@ -68,6 +68,7 @@
     submission: {},
     stats: null,
     emails: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_EMAIL]]),
+    emailLoads: new Map(),
     fields: new Map([[FALLBACK_EMAIL.email_id, FALLBACK_FIELDS]]),
     reviewed: new Set(JSON.parse(localStorage.getItem("sdoc-reviewed") || "[]")),
     reviewHistory: JSON.parse(localStorage.getItem("sdoc-review-history") || "[]"),
@@ -197,22 +198,32 @@
 
   async function loadEmail(emailId) {
     if (state.emails.has(emailId)) return state.emails.get(emailId);
-    const url = `${String(CONFIG.dataBase || "../data").replace(/\/$/, "")}/inbox/${emailId}.json`;
-    try {
-      const email = await fetchJson(url, 3000);
-      state.emails.set(emailId, email);
-      return email;
-    } catch (_) {
-      const generic = {
-        email_id: emailId,
-        from: "Source email unavailable in API response",
-        subject: `${titleCase(state.submission[emailId]?.category || "Email")} — ${formatId(emailId)}`,
-        body: "Serve this frontend from the repository root to load the source email body and attachments.",
-        attachments: []
-      };
-      state.emails.set(emailId, generic);
-      return generic;
-    }
+    if (state.emailLoads.has(emailId)) return state.emailLoads.get(emailId);
+    const request = (async () => {
+      try {
+        const email = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/source`), 6000);
+        state.emails.set(emailId, email);
+        return email;
+      } catch (_) { /* local static fallback below */ }
+      const url = `${String(CONFIG.dataBase || "../data").replace(/\/$/, "")}/inbox/${emailId}.json`;
+      try {
+        const email = await fetchJson(url, 3000);
+        state.emails.set(emailId, email);
+        return email;
+      } catch (_) {
+        const generic = {
+          email_id: emailId,
+          from: "Source email unavailable",
+          subject: `${titleCase(state.submission[emailId]?.category || "Email")} — ${formatId(emailId)}`,
+          body: "The source email could not be loaded from the API or local dataset.",
+          attachments: []
+        };
+        state.emails.set(emailId, generic);
+        return generic;
+      }
+    })().finally(() => state.emailLoads.delete(emailId));
+    state.emailLoads.set(emailId, request);
+    return request;
   }
 
   async function loadText(path) {
@@ -237,6 +248,12 @@
 
   async function loadComparison(emailId, email) {
     if (state.fields.has(emailId)) return state.fields.get(emailId);
+    try {
+      const payload = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/comparison`), 10000);
+      const result = { si: payload.si || {}, bl: payload.bl || {} };
+      state.fields.set(emailId, result);
+      return result;
+    } catch (_) { /* retain direct-file support for local static previews */ }
     const attachments = email.attachments || [];
     const textAttachments = attachments.filter(path => /\.txt$/i.test(path));
     if (textAttachments.length < 2) return { si: {}, bl: {} };

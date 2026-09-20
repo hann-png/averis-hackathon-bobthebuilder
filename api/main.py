@@ -166,6 +166,23 @@ def get_email_result(email_id: str, data_dir: str = DATA_DIR):
         )
 
 
+@app.get("/email/{email_id}/source")
+def get_email_source(email_id: str, data_dir: str = DATA_DIR):
+    """Return the source email needed by the operator UI without exposing data/ publicly."""
+    _require_known_email(email_id)
+    try:
+        email = Inbox(data_dir).get(email_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Source email {email_id} is unavailable: {exc}")
+    return {
+        "email_id": email_id,
+        "from": email.get("from", ""),
+        "subject": email.get("subject", ""),
+        "body": email.get("body", ""),
+        "attachments": email.get("attachments", []),
+    }
+
+
 class ReviewPayload(BaseModel):
     reviewed: bool = True
     reviewer: str = "operator"
@@ -375,6 +392,19 @@ def _get_email_and_fields(email_id: str, data_dir: str = DATA_DIR):
                 pass
 
     return inbox, email, result, si_fields, bl_fields
+
+
+@app.get("/email/{email_id}/comparison")
+def get_email_comparison(email_id: str, data_dir: str = DATA_DIR):
+    """Return extracted SI/BL fields through the API for the comparison UI."""
+    _require_known_email(email_id)
+    _, email, _, si_fields, bl_fields = _get_email_and_fields(email_id, data_dir)
+    return {
+        "email_id": email_id,
+        "attachments": email.get("attachments", []),
+        "si": si_fields,
+        "bl": bl_fields,
+    }
 
 
 @app.get("/email/{email_id}/notification")

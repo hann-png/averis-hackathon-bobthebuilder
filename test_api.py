@@ -69,6 +69,30 @@ def test_single_email_endpoint():
     assert len(data.get("defect_fields", [])) > 0
 
 
+def test_source_email_endpoint_returns_real_non_fallback_content():
+    """Verify Railway can serve every source email without exposing the data directory."""
+    response = client.get("/email/email_013/source")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email_id"] == "email_013"
+    assert data["from"] == "sales@roxcel.at"
+    assert "MOMBASA" in data["subject"]
+    assert "Attached are the SI and draft BL" in data["body"]
+    assert len(data["attachments"]) == 2
+
+
+def test_comparison_endpoint_returns_extracted_fields_for_non_fallback_email():
+    """Verify the document comparison no longer depends on browser access to data/."""
+    response = client.get("/email/email_013/comparison")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email_id"] == "email_013"
+    assert data["si"]
+    assert data["bl"]
+    assert "port_of_discharge" in data["si"]
+    assert data["si"]["port_of_discharge"] != data["bl"]["port_of_discharge"]
+
+
 def test_email_notification_draft_endpoint():
     """Verify auto-generation of mismatch notification draft addressed to sender."""
     response = client.get("/email/email_004/notification")
