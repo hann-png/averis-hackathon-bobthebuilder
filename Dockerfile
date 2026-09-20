@@ -1,4 +1,4 @@
-# Multi-stage production Dockerfile for Shipping Document Verification Service
+#Multi-stage production Dockerfile for Shipping Document Verification Service
 FROM python:3.11-slim as base
 
 ENV PYTHONUNBUFFERED=1 \
@@ -25,5 +25,6 @@ RUN python -c "import os; os.system('python run_pipeline.py --data data --output
 
 EXPOSE 8080
 
-# Run FastAPI app
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Optionally run the idempotent PostgreSQL import before starting FastAPI.
+# Set SDOC_AUTO_MIGRATE=true for one Railway deployment, verify it, then set it false.
+CMD ["sh", "-c", "if [ \"$SDOC_AUTO_MIGRATE\" = \"true\" ]; then python scripts/migrate_to_postgres.py; fi; exec uvicorn api.main:app --host 0.0.0.0 --port \"${PORT:-8080}\""]

@@ -57,6 +57,51 @@ def test_submission_endpoint():
         assert "decided_by" not in item, f"Internal decided_by leaked in {eid}"
 
 
+def test_partial_postgres_import_cannot_replace_complete_submission(monkeypatch):
+    """A partial database import must leave the complete file dataset active."""
+    class PartialPostgres:
+        def get_submission(self):
+            return {"email_004": api_main._get_file_submission()["email_004"]}
+
+    monkeypatch.setattr(api_main, "postgres_store", PartialPostgres())
+    submission = api_main._get_submission()
+    assert len(submission) == 520
+    assert "email_013" in submission
+
+
+def test_complete_postgres_import_serves_email_content_and_comparison(monkeypatch):
+    """A verified database import becomes the source for UI email data."""
+    database_submission = api_main._get_file_submission()
+
+    class CompletePostgres:
+        def get_submission(self):
+            return database_submission
+
+        def get_email(self, email_id):
+            return {
+                "email_id": email_id,
+                "from": "postgres@example.com",
+                "subject": "PostgreSQL source",
+                "body": "Stored email body",
+                "attachments": ["si.txt", "bl.txt"],
+            }
+
+        def get_comparison(self, email_id):
+            return {
+                "si": {"consignee": "SI value"},
+                "bl": {"consignee": "BL value"},
+            }
+
+    monkeypatch.setattr(api_main, "postgres_store", CompletePostgres())
+    source = client.get("/email/email_004/source")
+    comparison = client.get("/email/email_004/comparison")
+
+    assert source.status_code == 200
+    assert source.json()["from"] == "postgres@example.com"
+    assert comparison.status_code == 200
+    assert comparison.json()["si"]["consignee"] == "SI value"
+
+
 def test_single_email_endpoint():
     """Verify single email retrieval and verification result."""
     response = client.get("/email/email_004")

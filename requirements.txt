@@ -7,3 +7,4 @@ python-docx
 pypdf
 httpx
 python-dotenv
+psycopg[binary]>=3.1,<4

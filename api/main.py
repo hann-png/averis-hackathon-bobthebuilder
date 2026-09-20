@@ -37,6 +37,7 @@ from pipeline.security import (
 )
 from data.loader import Inbox
 from api.operator_state import OperatorStateStore, utc_now
+from api.postgres_store import PostgresStore
 from api.assistant import run_assistant_query
 
 logger = logging.getLogger(__name__)
@@ -60,18 +61,42 @@ DATA_DIR = os.environ.get("SDOC_DATA_DIR", "data")
 SUBMISSION_FILE = os.environ.get("SDOC_SUBMISSION_FILE", "submission.json")
 _state_db_setting = Path(os.environ.get("SDOC_STATE_DB", "runtime/operator_state.db"))
 STATE_DB_FILE = _state_db_setting if _state_db_setting.is_absolute() else ROOT_DIR / _state_db_setting
-operator_state = OperatorStateStore(STATE_DB_FILE)
+DATABASE_URL = os.environ.get("SDOC_DATABASE_URL") or os.environ.get("DATABASE_URL")
+postgres_store = PostgresStore(DATABASE_URL) if DATABASE_URL else None
+operator_state = postgres_store or OperatorStateStore(STATE_DB_FILE)
 
 
-def _get_submission() -> dict:
+def _get_file_submission() -> dict:
     if os.path.exists(SUBMISSION_FILE):
         with open(SUBMISSION_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 
+def _get_submission() -> dict:
+    """Use a complete PostgreSQL import first, with the file dataset as fallback."""
+    file_submission = _get_file_submission()
+    if postgres_store:
+        database_submission = postgres_store.get_submission()
+        if database_submission and (
+            not file_submission or database_submission == file_submission
+        ):
+            return database_submission
+        if database_submission:
+            logger.warning(
+                "PostgreSQL contains %s results but the file dataset contains %s; using file fallback",
+                len(database_submission),
+                len(file_submission),
+            )
+    return file_submission
+
+
 def _submission_processed_at() -> str | None:
     """Use the submission file timestamp when no per-email source timestamp exists."""
+    if postgres_store:
+        processed_at = postgres_store.latest_processed_at()
+        if processed_at:
+            return processed_at
     try:
         timestamp = Path(SUBMISSION_FILE).stat().st_mtime
     except OSError:
@@ -102,7 +127,14 @@ def docs_ui():
 @app.get("/health")
 def health_check():
     """Liveness check endpoint."""
-    return {"status": "ok", "service": "sdoc-verification-api", "version": "1.0.0"}
+    database = postgres_store.health() if postgres_store else {"connected": False}
+    return {
+        "status": "ok",
+        "service": "sdoc-verification-api",
+        "version": "1.0.0",
+        "storage": "postgresql" if postgres_store else "files+sqlite",
+        "database": database,
+    }
 
 
 
@@ -118,6 +150,12 @@ def trigger_process(data_dir: str = DATA_DIR):
         }
         with open(SUBMISSION_FILE, "w", encoding="utf-8") as f:
             json.dump(clean_submission, f, indent=2)
+        if postgres_store:
+            from scripts.migrate_to_postgres import migrate_dataset
+
+            migrate_dataset(postgres_store, data_dir, SUBMISSION_FILE)
+            if postgres_store.get_submission() != clean_submission:
+                raise RuntimeError("PostgreSQL verification failed after pipeline processing")
         operator_state.ensure_emails(clean_submission.keys(), processed_at=utc_now())
         return {
             "status": "success",
@@ -170,6 +208,10 @@ def get_email_result(email_id: str, data_dir: str = DATA_DIR):
 def get_email_source(email_id: str, data_dir: str = DATA_DIR):
     """Return the source email needed by the operator UI without exposing data/ publicly."""
     _require_known_email(email_id)
+    if postgres_store:
+        email = postgres_store.get_email(email_id)
+        if email:
+            return email
     try:
         email = Inbox(data_dir).get(email_id)
     except Exception as exc:
@@ -345,6 +387,14 @@ def get_email_confidence(email_id: str, data_dir: str = DATA_DIR):
 
 def _get_email_and_fields(email_id: str, data_dir: str = DATA_DIR):
     """Internal helper to retrieve email, classification/result, and extracted fields."""
+    sub = _get_submission()
+    if postgres_store:
+        database_email = postgres_store.get_email(email_id)
+        if database_email and email_id in sub:
+            comparison = postgres_store.get_comparison(email_id)
+            if comparison["si"] or comparison["bl"] or sub[email_id].get("category") != "BL_COMPARISON":
+                return None, database_email, sub[email_id], comparison["si"], comparison["bl"]
+
     inbox = Inbox(data_dir)
     try:
         email = inbox.get(email_id)
@@ -354,7 +404,6 @@ def _get_email_and_fields(email_id: str, data_dir: str = DATA_DIR):
     if not email:
         raise HTTPException(status_code=404, detail=f"Email {email_id} not found in inbox")
 
-    sub = _get_submission()
     if email_id in sub:
         result = sub[email_id]
     else:
@@ -592,11 +641,13 @@ def query_workspace_assistant(payload: AssistantQueryPayload, data_dir: str = DA
     if not submission:
         raise HTTPException(status_code=404, detail="No submission data available")
     operator_state.ensure_emails(submission.keys(), processed_at=_submission_processed_at())
-    try:
-        emails = Inbox(data_dir).emails()
-    except Exception as exc:
-        logger.warning("Assistant could not load full email index: %s", exc)
-        emails = [{"email_id": email_id} for email_id in submission]
+    emails = postgres_store.list_emails() if postgres_store else []
+    if set(item.get("email_id") for item in emails) != set(submission):
+        try:
+            emails = Inbox(data_dir).emails()
+        except Exception as exc:
+            logger.warning("Assistant could not load full email index: %s", exc)
+            emails = [{"email_id": email_id} for email_id in submission]
 
     return run_assistant_query(
         query=query,
