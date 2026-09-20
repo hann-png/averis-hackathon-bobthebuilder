@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  const loaderStartedAt = performance.now();
   const CONFIG = window.SDOC_CONFIG || {};
   const FIELDS = [
     ["shipper", "Shipper"],
@@ -113,6 +114,17 @@
     toast.classList.add("visible");
     clearTimeout(showToast.timer);
     showToast.timer = setTimeout(() => toast.classList.remove("visible"), 2600);
+  }
+
+  function dismissAppLoader() {
+    const loader = $("#appLoader");
+    if (!loader) return;
+    const minimumDisplay = 1600;
+    const remaining = Math.max(0, minimumDisplay - (performance.now() - loaderStartedAt));
+    window.setTimeout(() => {
+      loader.classList.add("is-ready");
+      window.setTimeout(() => loader.remove(), 780);
+    }, remaining);
   }
 
   async function fetchJson(url, timeout = 2200, options = {}) {
@@ -1537,8 +1549,9 @@
     hydrateVisibleEmails();
   }
 
-  init().catch(error => {
+  init().then(dismissAppLoader).catch(error => {
     console.error(error);
     showToast("Could not initialize the dashboard", "error");
+    dismissAppLoader();
   });
 })();
