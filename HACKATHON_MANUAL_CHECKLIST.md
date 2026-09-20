@@ -26,7 +26,7 @@ Submission Google Form: **[https://forms.gle/nnam5eXrf5cjXdf3](https://forms.gle
 ### Deliverable 2: Project Name & Description
 - [ ] **Project Name**: `BOB — Intelligent Shipping Document Verification & Discrepancy Management`
 - [ ] **Project Summary / Description** *(Pre-drafted copy-paste summary)*:
-  > *BOB is an end-to-end intelligent automation system designed to eliminate maritime inbox overload and prevent costly document errors. It automatically classifies incoming logistics emails, parses multi-format attachments (.txt, .pdf, .docx, .xlsx), extracts the 7 canonical shipping fields, performs deterministic zero-false-alarm comparison between Shipping Instructions (SI) and draft Bills of Lading (BL), generates plain-English AI discrepancy explanations using Gemini 2.0 Flash, composes automated clarification email drafts with dual-lock safety rails, and escalates ambiguous edge-cases for human review.*
+  > *BOB is an end-to-end intelligent automation system designed to eliminate maritime inbox overload and prevent costly document errors. It automatically classifies incoming logistics emails, parses multi-format attachments (.txt, .pdf, .docx, .xlsx), extracts the 7 canonical shipping fields, performs deterministic zero-false-alarm comparison between Shipping Instructions (SI) and draft Bills of Lading (BL), generates plain-English AI discrepancy explanations using Gemini 3.5 Flash Lite, composes automated clarification email drafts with dual-lock safety rails, and escalates ambiguous edge-cases for human review.*
 
 ### Deliverable 3: GitHub Repository Link
 - [ ] **Public GitHub Link**: `https://github.com/hann-png/averis-hackathon-bobthebuilder`
@@ -35,9 +35,9 @@ Submission Google Form: **[https://forms.gle/nnam5eXrf5cjXdf3](https://forms.gle
 
 ### Deliverable 4: Live Prototype / Cloud Demo Link
 - [ ] **Live Prototype URL**: `https://averis-hackathon-bobthebuilder-production.up.railway.app`
-- [ ] **Action on Railway**: Log in to Railway, navigate to the project settings, and add the environment variable:
-  - Key: `GEMINI_API_KEY`
-  - Value: `your-gemini-api-key`
+- [ ] **Action on Railway**: Log in to Railway, navigate to the project settings, and configure the environment variables:
+  - `GEMINI_API_KEYS`: `key1,key2,key3,...` (or `GEMINI_API_KEY`: `your-key` for single key)
+  - `DATABASE_URL`: *(optional, if using Railway PostgreSQL plugin)*
   *(Note: Do NOT set `BOB_ALLOW_REAL_SEND` on Railway; outbound emails remain safely blocked).*
 
 ### Deliverable 5: 5-Minute Pitch Video Link
@@ -47,7 +47,7 @@ Submission Google Form: **[https://forms.gle/nnam5eXrf5cjXdf3](https://forms.gle
 - [ ] **Required Video Structure**:
   1. **Quick Intro (0:00 - 0:30)**: Team name, project name ("BOB"), and member intros.
   2. **The Problem (0:30 - 1:15)**: Mixed inboxes, repetitive manual comparison of 7 fields, naming variances, consequences of missed discrepancies (fines, delays).
-  3. **Architecture & Tech Stack (1:15 - 2:00)**: Python, FastAPI, Gemini 2.0 Flash, multi-format doc extractors, deterministic comparator, Railway cloud deployment.
+  3. **Architecture & Tech Stack (1:15 - 2:00)**: Python, FastAPI, Gemini 3.5 Flash Lite, multi-format doc extractors, deterministic comparator, Railway cloud deployment.
   4. **Live Walkthrough Demo (2:00 - 4:00)**:
      - Open the live web app (`https://averis-hackathon-bobthebuilder-production.up.railway.app`).
      - Show email classification across 5 categories.
@@ -79,7 +79,7 @@ The submission form asks for written responses to several criteria. Here are tal
 - **The BOB solution**: Automates 90%+ of routine checks deterministically, freeing staff to focus solely on high-risk escalated exceptions.
 
 ### Q2: AI & Cloud Infrastructure Integration
-- **AI Integration**: We leverage **Google Gemini 2.0 Flash** for fuzzy classification of complex incoming logistics correspondence, unstructured text extraction, and generating plain-English discrepancy explanations.
+- **AI Integration**: We leverage **Google Gemini 3.5 Flash Lite** for fuzzy classification of complex incoming logistics correspondence, unstructured text extraction, and generating plain-English discrepancy explanations.
 - **Cloud Infrastructure**: The system is containerized via Docker and deployed live on **Railway**, offering auto-scaling, high availability, and instant public accessibility for operators and judges.
 
 ### Q3: Technical Challenges Faced & How We Overcame Them

@@ -107,3 +107,29 @@ def test_free_text_search_covers_complete_email_content(monkeypatch):
     response = ask("Find consignee")
     assert response["intent"] == "search"
     assert response["results"][0]["email_id"] == "email_001"
+
+
+if __name__ == "__main__":
+    import inspect
+    import sys
+
+    class _MockMonkeyPatch:
+        def setenv(self, key, value):
+            import os
+            os.environ[key] = value
+
+    test_funcs = [
+        (name, func)
+        for name, func in list(globals().items())
+        if name.startswith("test_") and callable(func)
+    ]
+
+    for name, func in test_funcs:
+        sig = inspect.signature(func)
+        if "monkeypatch" in sig.parameters:
+            func(_MockMonkeyPatch())
+        else:
+            func()
+        print(f"[PASS] {name}")
+
+    print(f"\nALL {len(test_funcs)} ASSISTANT TESTS PASSED SUCCESSFULLY!")

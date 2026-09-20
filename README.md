@@ -3,11 +3,11 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg?logo=streamlit&logoColor=white)](https://streamlit.io)
-[![Gemini AI](https://img.shields.io/badge/AI-Gemini_2.0_Flash-8E75B2.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Gemini AI](https://img.shields.io/badge/AI-Gemini_3.5_Flash_Lite-8E75B2.svg?logo=google&logoColor=white)](https://ai.google.dev/)
 [![Railway Live Demo](https://img.shields.io/badge/Live_Demo-Railway-0B0D0E.svg?logo=railway&logoColor=white)](https://averis-hackathon-bobthebuilder-production.up.railway.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An intelligent end-to-end automation platform built for the **Averis x Monash Hackathon 2026**. **BOB** transforms messy maritime operations inboxes into a zero-defect document verification workflow: classifying incoming emails, extracting canonical shipping fields from multi-format attachments (`.txt`, `.pdf`, `.docx`, `.xlsx`), detecting discrepancies between Shipping Instructions (SI) and draft Bills of Lading (BL), generating natural-language AI discrepancy summaries, auto-drafting sender clarification emails with dual-lock safety rails, and routing ambiguous cases to human operators.
+Built by Team **Bob the Builder** for the **Averis x Monash Hackathon 2026**, **BOB** (*Bill of Lading Verification System*) is an intelligent end-to-end automation platform that transforms messy maritime operations inboxes into a zero-defect document verification workflow: classifying incoming emails, extracting canonical shipping fields from multi-format attachments (`.txt`, `.pdf`, `.docx`, `.xlsx`), detecting discrepancies between Shipping Instructions (SI) and draft Bills of Lading (BL), generating natural-language AI discrepancy summaries, auto-drafting sender clarification emails with dual-lock safety rails, and routing ambiguous cases to human operators.
 
 ---
 
@@ -21,20 +21,6 @@ The application is deployed and publicly accessible on cloud infrastructure:
 | **Interactive API Documentation** | [API Portal (`/docs`)](https://averis-hackathon-bobthebuilder-production.up.railway.app/docs) | Interactive testing console for all pipeline endpoints |
 | **Swagger UI Specification** | [OpenAPI Console (`/swagger`)](https://averis-hackathon-bobthebuilder-production.up.railway.app/swagger) | Complete OpenAPI 3.0 schema and request models |
 | **Service Health Check** | [Health Endpoint (`/health`)](https://averis-hackathon-bobthebuilder-production.up.railway.app/health) | Real-time container liveness and heartbeat check |
-
----
-
-## 🎯 Hackathon Rubric Alignment
-
-| Judging Criterion | Points | How BOB Delivers |
-|---|---|---|
-| **1. System Design & Architecture** | 15 pts | Decoupled modular pipeline: fast-path spam filtering, Gemini 2.0 Flash classification, multi-format doc parsing, deterministic field comparator, AI explanations, and dual-lock notification engine. |
-| **2. Working Core Prototype** | 25 pts | Live on Railway, full CLI suite, interactive Streamlit review dashboard, and standalone FastAPI backend handling all 520 inbox records end-to-end. |
-| **3. Technology Integration** | 15 pts | Seamless integration of Google Gemini AI, FastAPI, Streamlit, Pydantic, pypdf, python-docx, openpyxl, Docker, and Railway Cloud hosting. |
-| **4. Technical Feasibility & Validation** | 15 pts | 100% automated test coverage in `test_api.py`, deterministic comparison logic eliminating false positives, and rigorous schema validation against competition requirements. |
-| **5. Problem Statement Understanding** | 10 pts | Direct solution to logistics inbox overload: segregates 5 email categories, resolves port and entity naming variations, and checks the 7 canonical shipping fields. |
-| **6. Innovation & Solution Approach** | 10 pts | Hybrid AI-deterministic architecture: AI handles fuzzy classification and document extraction; pure Python comparator ensures exact zero-defect matching; AI drafts contextual mismatch explanations. |
-| **7. Practical Value & Potential** | 10 pts | Human-in-the-loop review queues with reason codes (`missing_attachment`, `unreadable`, `missing_value`, `wrong_doc_type`) plus sender-addressed auto-draft clarification emails. |
 
 ---
 
@@ -62,10 +48,13 @@ cp .env.example .env
 ```
 
 ### 2. Verify Everything with Automated Tests
-Run the self-contained test suite in under 5 seconds:
+Automated endpoint tests covering health checks, submission validation, and per-email routes (`test_api.py`), plus security and assistant test suites:
 ```bash
-# Test API endpoints, schema integrity, and safety rails
+# Run API endpoint, schema validation, and safety rails test suite
 python test_api.py
+
+# Run workspace assistant safety and natural-language query tests
+python test_assistant.py
 
 # Test standalone auto-reply notification scenarios (all 6 cases)
 python -m pipeline.notification
@@ -79,10 +68,41 @@ python run_pipeline.py --data data --output submission.json
 
 ---
 
+## ✨ Features
+
+- **5-Category Email Classification**: Accurately routes incoming emails into `BL_COMPARISON`, `SI_REQUEST`, `INVOICE_QUERY`, `GENERAL`, and `SPAM`. Combines fast regex pre-filters for spam and recurring operational digests with a primary Gemini 3.5 Flash Lite classifier and deterministic fallback rules.
+- **Multi-Format Document Extraction**: Ingests `.txt`, `.pdf`, `.docx`, and `.xlsx` attachments to extract the 7 canonical shipping fields, cross-checking model extractions against synonym dictionaries to generate field-level confidence ratings.
+- **Deterministic 7-Field Comparison**: Implements zero-false-alarm matching logic that normalizes entity punctuation, legal corporate suffixes, `"TO ORDER OF..."` consignee clauses, container notations (e.g. `4 x 40'HC` → `4`), port name variations, and metric weight tolerances (`≤ 1.0 KG`).
+- **Reliability & Human Review Escalation**: Identifies ambiguous shipments and unresolvable edge cases, routing them to human review with standardized diagnostic reason codes (`wrong_doc_type`, `missing_attachment`, `unreadable`, `missing_value`).
+- **Automated Clarification Notifications**: Prepares structured, sender-addressed clarification drafts when discrepancies occur, detailing the exact fields in dispute with actionable resolution requests.
+- **Dual-Lock Safety Rails**: Outbound email sending is strictly locked by default (`actually_send=False`), requiring explicit configuration of `BOB_ALLOW_REAL_SEND=true` before any SMTP transmission can occur, with all drafts mirrored to local audit files.
+- **Natural-Language Workspace Assistant**: Supports read-only operational inquiries (e.g., querying mismatches, port anomalies, or escalation queues) through conversational prompts powered by allowlisted query execution.
+- **Zero-Trust Security & PII Protection**: Includes attachment magic-byte validation, zip-bomb protection, adversarial prompt injection defenses, SHA-256 cryptographic provenance, and automated PII redaction.
+
+---
+
 ## 🖥️ Interactive User Interfaces
 
-### 1. Streamlit Operator Review Dashboard
-Designed for logistics operators to audit discrepancies side-by-side:
+### 1. FastAPI Microservice & Web Interface *(Live on Railway & Local)*
+The core production service runs on FastAPI, powering the REST API and the live Operator Web Portal:
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
+```
+*API Docs: `http://localhost:8080/docs` | Web App: `http://localhost:8080/app`*
+
+**Core Endpoints:**
+- `GET /health` — Service liveness check and database connection status.
+- `GET /stats` — Aggregated metrics across all emails, categories, and defect fields.
+- `GET /submission` — Returns validated `submission.json` adhering to competition requirements.
+- `GET /email/{email_id}` — On-demand result and classification for a specific email.
+- `GET /email/{email_id}/notification` — Generates a draft email notification addressed to the original sender.
+- `POST /email/{email_id}/notification/send` — Saves notification draft locally (safely defaults to `actually_send=False`).
+- `POST /assistant/query` — Natural-language operational query endpoint.
+
+### 2. Streamlit Operator Review Dashboard *(Local-Only)*
+> **Note**: The Streamlit dashboard is designed for local development and offline operator triage (`streamlit run dashboard/app.py` on `localhost:8501`). It is **not** part of the live Railway cloud deployment, which runs the FastAPI microservice and web interface.
+
+Launch locally via:
 ```bash
 streamlit run dashboard/app.py
 ```
@@ -91,24 +111,9 @@ streamlit run dashboard/app.py
 **Key Features:**
 - **Real-Time KPI Cards**: Total emails processed, mismatch rate, escalation queue size, and clean shipment counts.
 - **Side-by-Side Field Diffing**: Highlights discrepancies across all 7 canonical fields in clear color-coded tables.
-- **AI Discrepancy Explanations**: Plain-English root cause explanations generated by Gemini 2.0 Flash.
+- **AI Discrepancy Explanations**: Plain-English root cause explanations generated by Gemini 3.5 Flash Lite.
 - **📧 Mismatch Notification Draft Tab**: Inspects sender-addressed clarification drafts with a one-click local save button.
 - **Operator Review Checkbox**: Tracks human-in-the-loop review status per shipment.
-
-### 2. FastAPI Microservice & Web Interface
-Launch the production REST backend:
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
-```
-*API Docs: `http://localhost:8080/docs` | Web App: `http://localhost:8080/app`*
-
-**Core Endpoints:**
-- `GET /health` — Service liveness check.
-- `GET /stats` — Aggregated metrics across all emails, categories, and defect fields.
-- `GET /submission` — Returns validated `submission.json` adhering to the required schema.
-- `GET /email/{email_id}` — On-demand result and classification for a specific email.
-- `GET /email/{email_id}/notification` — Generates a draft email notification addressed to the original sender.
-- `POST /email/{email_id}/notification/send` — Saves notification draft locally (safely defaults to `actually_send=False`).
 
 ---
 
@@ -116,12 +121,13 @@ uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
 
 ```mermaid
 flowchart TD
-    A[Incoming Email Inbox] --> B0[Spam Pre-Filter<br/>Fast Regex & Domain Check]
+    A[Incoming Email Inbox] --> B0[Spam & Digest Pre-Filter<br/>Fast Regex & Domain Check]
     B0 -->|Obvious Spam| C1[SPAM - OK]
-    B0 -->|Legitimate Email| B[AI Email Classifier<br/>Gemini 2.0 Flash Primary<br/>Domain Rules Fallback]
+    B0 -->|Operational Digest / Holiday| C2[GENERAL - OK]
+    B0 -->|Standard Email| B[AI Email Classifier<br/>Gemini 3.5 Flash Lite Primary<br/>Domain Rules Fallback]
     
     B -->|SPAM| C1
-    B -->|GENERAL| C2[GENERAL - OK]
+    B -->|GENERAL| C2
     B -->|INVOICE_QUERY| C3[INVOICE_QUERY - OK]
     B -->|SI_REQUEST| C4[SI_REQUEST - OK]
     B -->|BL_COMPARISON| D[Escalation Gate 1<br/>Deterministic Attachment Check]
@@ -140,7 +146,7 @@ flowchart TD
     I -->|Field Discrepancy Found| J1[MISMATCH<br/>has_defect: true]
     I -->|All 7 Fields Match| J2[OK<br/>has_defect: false]
     
-    J1 --> J3[AI Discrepancy Explainer<br/>Gemini 2.0 Flash Summary]
+    J1 --> J3[AI Discrepancy Explainer<br/>Gemini 3.5 Flash Lite Summary]
     J1 --> J4[Notification Engine<br/>Drafts Sender Clarification Email]
     
     J1 --> K[submission.json]
@@ -174,7 +180,7 @@ The system extracts and verifies the 7 canonical shipment fields between the Shi
 
 ---
 
-## 🔒 Auto-Reply Notifications & Dual-Lock Safety Rails
+## 🔒 Auto-Reply Notifications & Safety Rails
 
 When discrepancies are detected, BOB automatically creates a structured, sender-addressed clarification draft detailing the exact fields in dispute and requesting corrections.
 
@@ -192,30 +198,36 @@ To ensure test and benchmark addresses from sample datasets are **never** accide
 averis-hackathon-bobthebuilder/
 ├── api/
 │   ├── main.py                     # Production FastAPI REST microservice
-│   └── docs.html                   # Interactive API portal served at /docs
+│   ├── assistant.py                # Natural-language workspace query engine
+│   ├── operator_state.py           # Human review audit trails & state store
+│   ├── postgres_store.py           # Production PostgreSQL persistence
+│   └── docs.html                   # Interactive visual API portal served at /docs
 ├── dashboard/
-│   └── app.py                      # Streamlit visual review & inspection dashboard
+│   └── app.py                      # Local Streamlit visual review & inspection dashboard
 ├── frontend/                       # Web application served at /app
 │   ├── index.html
 │   ├── styles.css
 │   └── app.js
 ├── pipeline/
-│   ├── classifier.py               # AI email classifier (Gemini 2.0 + regex filter)
+│   ├── classifier.py               # 5-class email classifier (Gemini 3.5 Flash Lite + regex pre-filter)
+│   ├── gemini_client.py            # Resilient multi-key Gemini client pool with rate limiting
 │   ├── extractor_text.py           # Canonical text extraction with synonym cross-check
 │   ├── extractor_docs.py           # Multi-format doc parser (.pdf, .docx, .xlsx)
 │   ├── explainer.py                # Gemini AI discrepancy explanation generator
 │   ├── comparator.py               # Deterministic 7-field matching logic
 │   ├── escalation.py               # Reliability escalation rules (wrong doc, unreadable, etc.)
 │   ├── notification.py             # Auto-reply draft generator & dual-lock safety rails
+│   ├── security.py                 # Anti-injection, PII redaction & attachment sanitization
 │   └── runner.py                   # Complete pipeline orchestrator
 ├── data/                           # Hackathon inbox records and SI/BL attachments
 ├── testing_generated_emails/       # Local audit files of auto-generated mismatch drafts
 ├── test_api.py                     # Automated integration and endpoint test suite
+├── test_assistant.py               # Workspace assistant test suite
 ├── run_pipeline.py                 # CLI entry point to process data & output submission.json
 ├── submission.json                 # Strictly validated competition submission file
 ├── requirements.txt                # Python dependencies
 ├── Dockerfile                      # Production container image
-└── README.md                       # Documentation
+└── README.md                       # Project documentation
 ```
 
 ---
@@ -235,4 +247,4 @@ The project is containerized and auto-deployed to Railway. The live deployment i
 ---
 
 ## 📄 License
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details. The competition dataset under `data/` was provided by the hackathon organizers and is not covered by this license (see [LICENSE](LICENSE) for the full attribution note).
