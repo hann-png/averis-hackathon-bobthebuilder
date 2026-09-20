@@ -329,39 +329,9 @@ def parse_lines_to_fields(lines: list[str]) -> dict[str, str]:
     return fields
 
 
-# ── Gemini Client for Extraction ─────────────────────────────────────────────
+# ── Gemini Client for Extraction via Resilient Pool ──────────────────────────
 
-_gemini_client = None
-
-
-def _get_gemini_client():
-    global _gemini_client
-
-    if _gemini_client is None:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-
-        except ImportError:
-            logger.warning(
-                "python-dotenv is not installed; "
-                ".env file cannot be loaded automatically"
-            )
-
-        from google import genai
-
-        api_key = os.environ.get("GEMINI_API_KEY")
-
-        if not api_key:
-            raise RuntimeError(
-                "GEMINI_API_KEY environment variable is not set"
-            )
-
-        _gemini_client = genai.Client(
-            api_key=api_key
-        )
-
-    return _gemini_client
+from pipeline.gemini_client import generate_content
 
 
 def extract_fields_by_gemini(text: str) -> dict[str, str]:
@@ -370,8 +340,6 @@ def extract_fields_by_gemini(text: str) -> dict[str, str]:
 
     Extract the 7 canonical fields from document text using Gemini.
     """
-    client = _get_gemini_client()
-
     prompt = f"""
 You are an expert logistics parser.
 
@@ -413,8 +381,7 @@ Document Text:
 {text[:4000]}
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
+    response = generate_content(
         contents=prompt,
         config={
             "response_mime_type": "application/json",

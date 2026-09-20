@@ -128,6 +128,14 @@ def main():
         help="URL of the scoring server to POST results to (e.g., http://localhost:8080)"
     )
     parser.add_argument(
+        "--force-refresh", action="store_true",
+        help="Ignore cached results in .cache/results and reprocess all emails",
+    )
+    parser.add_argument(
+        "--workers", "-w", type=int, default=None,
+        help="Number of concurrent workers (default: auto-calibrated based on API key pool size)",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Enable verbose/debug logging"
     )
@@ -137,8 +145,8 @@ def main():
     logger = logging.getLogger(__name__)
 
     # ── Run the pipeline ──
-    logger.info(f"Running pipeline on {args.data}")
-    submission = run_pipeline(args.data)
+    logger.info(f"Running pipeline on {args.data} (force_refresh={args.force_refresh}, workers={args.workers})")
+    submission = run_pipeline(args.data, force_refresh=args.force_refresh, workers=args.workers)
 
     # ── Strip internal metadata before saving ──
     # The 'decided_by' field is internal; remove it from the output

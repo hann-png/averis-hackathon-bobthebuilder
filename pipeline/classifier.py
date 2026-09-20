@@ -144,33 +144,15 @@ def classify_by_rules(email: dict) -> str | None:
     return "GENERAL"
 
 
-# ?? Gemini Primary Client ??????????????????????????????????????????????????
+# ── Gemini Primary Client via Resilient Pool ─────────────────────────────────
 
-_gemini_client = None
-
-
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-        except ImportError:
-            logger.warning("python-dotenv is not installed; .env file cannot be loaded automatically")
-        from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
+from pipeline.gemini_client import generate_content
 
 
 def classify_by_gemini(email: dict) -> str:
     """
     Primary classification path: classify email using Gemini API with structured JSON output.
     """
-    client = _get_gemini_client()
-
     prompt = f"""You are classifying shipping/logistics company emails.
 Classify this email into exactly ONE of these categories:
 - BL_COMPARISON: Emails asking to compare/confirm SI and BL documents, or requesting/sending draft BL.
@@ -187,8 +169,7 @@ Attachments: {json.dumps(email.get('attachments', []))}
 
 Respond with ONLY the category name."""
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
+    response = generate_content(
         contents=prompt,
         config={
             "response_mime_type": "application/json",

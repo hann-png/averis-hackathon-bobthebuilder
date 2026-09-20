@@ -32,3 +32,8 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .venv/
+runtime/
+.cache/
+scratch/
+repomix*.xml
+.github/

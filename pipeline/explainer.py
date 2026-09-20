@@ -10,23 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_gemini_client = None
-
-
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-        except ImportError:
-            logger.warning("python-dotenv is not installed; .env file cannot be loaded automatically")
-        from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
+from pipeline.gemini_client import generate_content
 
 
 def fallback_explanation(si_fields: dict, bl_fields: dict, defect_fields: list[str]) -> str:
@@ -49,7 +33,6 @@ def explain_mismatch(si_fields: dict, bl_fields: dict, defect_fields: list[str])
         return ""
 
     try:
-        client = _get_gemini_client()
         mismatch_summary = []
         for f in defect_fields:
             mismatch_summary.append(
@@ -64,8 +47,7 @@ The deterministic verification engine detected a MISMATCH between the Shipping I
 In 1-2 concise, professional sentences, explain the exact discrepancy for human logistics operators (e.g., 'BL lists 4 containers but SI specifies 3').
 Keep it concise, clear, and factual without filler or pleasantries."""
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
+        response = generate_content(
             contents=prompt,
             config={"temperature": 0.0},
         )

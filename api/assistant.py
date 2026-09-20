@@ -32,23 +32,7 @@ ALLOWED_STATUSES = {"MISMATCH", "NEEDS_REVIEW", "OK", "FLAGGED"}
 ALLOWED_CATEGORIES = {"BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM"}
 ALLOWED_REVIEW_REASONS = {"wrong_doc_type", "missing_attachment", "unreadable", "missing_value"}
 
-_gemini_client = None
-
-
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-        except ImportError:
-            pass
-        from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is not configured")
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
+from pipeline.gemini_client import generate_content
 
 
 def _normalize_email_id(number: str) -> str:
@@ -121,7 +105,6 @@ def _rule_intent(query: str, selected_email_id: Optional[str]) -> Optional[dict]
 
 
 def _gemini_intent(query: str, selected_email_id: Optional[str]) -> dict:
-    client = _get_gemini_client()
     redacted_query, _ = PIIRedactor.redact(query)
     prompt = f"""You interpret read-only questions for a shipping-document verification dashboard.
 Return one allowed structured intent. Never calculate counts and never invent email IDs.
@@ -134,8 +117,8 @@ Current selected email: {selected_email_id or 'none'}
 
 Use search for subject, sender, or free-text lookup. Use overview for general totals.
 User request: {redacted_query[:1000]}"""
-    response = client.models.generate_content(
-        model=os.environ.get("BOB_ASSISTANT_MODEL", "gemini-2.0-flash"),
+    response = generate_content(
+        model=os.environ.get("BOB_ASSISTANT_MODEL", os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")),
         contents=prompt,
         config={
             "response_mime_type": "application/json",
