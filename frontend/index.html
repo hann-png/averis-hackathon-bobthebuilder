@@ -313,8 +313,21 @@
       <div class="assistant-identity"><span class="assistant-avatar small"><svg viewBox="0 0 24 24"><path d="M8 18.5 4 21v-5.2A8 8 0 0 1 3 12C3 7 7 3 12 3s9 4 9 9-4 9-9 9a9.8 9.8 0 0 1-4-.9"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span><span><strong>Ask BOB</strong><small><i></i>Workspace ready</small></span></div>
       <div><button class="icon-button" id="expandAssistant" type="button" aria-label="Open full conversation"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button><button class="icon-button" id="closeAssistantCompact" type="button" aria-label="Close assistant"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
     </header>
+    <section class="compact-context-card mismatch" id="compactContextCard" aria-label="Current email actions">
+      <button class="compact-context-summary" id="compactContextToggle" type="button" aria-expanded="false">
+        <span class="compact-context-status" aria-hidden="true"></span>
+        <span class="compact-context-copy"><small>Current email</small><strong id="compactContextId">EMAIL_004</strong><span id="compactContextSubject">Request BL draft</span></span>
+        <span class="compact-context-hint"><small>Quick actions</small><svg viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></svg></span>
+      </button>
+      <div class="compact-context-actions">
+        <button type="button" data-context-action="explain"><svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M9.5 9a2.7 2.7 0 1 1 4.6 2c-1.4 1.1-2.1 1.6-2.1 3M12 18h.01"/></svg><span>Explain</span></button>
+        <button type="button" data-context-action="summarize"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 10h14M5 15h9M5 20h6"/></svg><span>Summary</span></button>
+        <button type="button" data-context-action="related"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/><path d="m10 10 4 4"/></svg><span>Related</span></button>
+        <button type="button" data-context-action="draft" id="compactDraftAction"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h8l6 6v10.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z"/><path d="M14 3v6h6"/></svg><span>Draft</span></button>
+      </div>
+    </section>
     <div class="assistant-messages compact-messages" id="assistantCompactMessages" aria-live="polite"></div>
-    <div class="assistant-quick-prompts"><button type="button" data-context-action="explain">Explain current</button><button type="button" data-context-action="summarize">Summarize</button><button type="button" data-context-action="draft">Open draft</button><button type="button" data-assistant-prompt="Show the review queue">Review queue</button></div>
+    <div class="assistant-quick-prompts"><button type="button" data-assistant-prompt="Show the review queue">Review queue</button><button type="button" data-assistant-prompt="Show mismatched emails for today">Today’s mismatches</button><button type="button" data-assistant-prompt="Find my latest reviewed email">Latest reviewed</button></div>
     <form class="assistant-composer" data-assistant-form>
       <input type="text" data-assistant-input autocomplete="off" placeholder="Ask BOB…" aria-label="Message Ask BOB">
       <button type="submit" class="assistant-send-button" aria-label="Send message"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 5v14"/></svg></button>

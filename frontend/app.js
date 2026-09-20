@@ -653,9 +653,17 @@
     const item = state.submission[state.selectedId];
     const email = state.emails.get(state.selectedId);
     if (!item) return;
+    const subject = displaySubject(email?.subject) || titleCase(item.category);
     $("#assistantContextId").textContent = formatId(state.selectedId);
-    $("#assistantContextSubject").textContent = displaySubject(email?.subject) || titleCase(item.category);
+    $("#assistantContextSubject").textContent = subject;
     $("#assistantDraftAction").hidden = item.status !== "MISMATCH";
+    $("#compactContextId").textContent = formatId(state.selectedId);
+    $("#compactContextSubject").textContent = subject;
+    $("#compactContextSubject").title = subject;
+    $("#compactDraftAction").hidden = item.status !== "MISMATCH";
+    const compactCard = $("#compactContextCard");
+    compactCard.classList.remove("mismatch", "review", "ok");
+    compactCard.classList.add(statusClass(item.status));
   }
 
   function runContextAction(action) {
@@ -670,6 +678,8 @@
       showToast("Drafts are available for mismatched emails", "warning");
       return;
     }
+    $("#compactContextCard").classList.remove("is-expanded");
+    $("#compactContextToggle").setAttribute("aria-expanded", "false");
     submitAssistantPrompt(prompts[action]);
   }
 
@@ -1398,6 +1408,11 @@
       if (state.assistantDragMoved) return;
       $("#assistantCompact").classList.contains("visible") ? closeAssistantCompact() : openAssistant("compact");
     });
+    $("#compactContextToggle").addEventListener("click", () => {
+      const card = $("#compactContextCard");
+      const expanded = card.classList.toggle("is-expanded");
+      $("#compactContextToggle").setAttribute("aria-expanded", String(expanded));
+    });
     $("#closeAssistantCompact").addEventListener("click", closeAssistantCompact);
     $("#expandAssistant").addEventListener("click", () => openAssistant("full"));
     $("#closeAssistantFull").addEventListener("click", () => closeAssistantFull());
@@ -1411,6 +1426,10 @@
       submitAssistantPrompt($("[data-assistant-input]", form).value);
     }));
     document.addEventListener("click", event => {
+      if (!event.target.closest("#compactContextCard")) {
+        $("#compactContextCard").classList.remove("is-expanded");
+        $("#compactContextToggle").setAttribute("aria-expanded", "false");
+      }
       const contextAction = event.target.closest("[data-context-action]");
       if (contextAction) runContextAction(contextAction.dataset.contextAction);
       const prompt = event.target.closest("[data-assistant-prompt]");
