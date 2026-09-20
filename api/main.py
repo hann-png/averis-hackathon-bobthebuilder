@@ -185,7 +185,14 @@ def get_operator_metadata():
 @app.get("/email/{email_id}/metadata")
 def get_email_metadata(email_id: str):
     _require_known_email(email_id)
-    return operator_state.get(email_id)
+    return operator_state.get_with_events(email_id)
+
+
+@app.get("/email/{email_id}/activity")
+def get_email_activity(email_id: str):
+    """Return the operator audit events stored outside the hackathon submission."""
+    _require_known_email(email_id)
+    return {"email_id": email_id, "events": operator_state.list_events(email_id)}
 
 
 @app.post("/email/{email_id}/review")
@@ -410,6 +417,15 @@ def get_email_notification_draft(
     if saved_draft:
         draft["subject"] = saved_draft["subject"]
         draft["body"] = saved_draft["body"]
+    else:
+        operator_state.log_event(
+            email_id,
+            "draft_regenerated" if regenerate else "draft_generated",
+            "Response draft regenerated" if regenerate else "Response draft generated",
+            "A clarification draft was prepared for operator review. No email was sent.",
+            "system",
+            dedupe_seconds=30,
+        )
 
     return {
         "email_id": email_id,
@@ -483,6 +499,7 @@ def trigger_notification_action(
             body=response["body"],
         )
         response["draft"] = saved_draft
+        response["activity"] = operator_state.get_with_events(email_id)
     return response
 
 

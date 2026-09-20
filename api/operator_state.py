@@ -61,6 +61,22 @@ class OperatorStateStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS activity_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT,
+                    actor TEXT,
+                    occurred_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_events_email_time ON activity_events (email_id, occurred_at DESC)"
+            )
 
     @staticmethod
     def _serialize(row: sqlite3.Row | None) -> Optional[dict]:
@@ -88,7 +104,11 @@ class OperatorStateStore:
                 INSERT INTO email_activity (email_id, first_seen_at, processed_at, updated_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(email_id) DO UPDATE SET
-                    processed_at = COALESCE(email_activity.processed_at, excluded.processed_at)
+                    processed_at = COALESCE(excluded.processed_at, email_activity.processed_at),
+                    updated_at = CASE
+                        WHEN excluded.processed_at IS NOT NULL THEN excluded.updated_at
+                        ELSE email_activity.updated_at
+                    END
                 """,
                 rows,
             )
@@ -101,6 +121,11 @@ class OperatorStateStore:
                 (email_id,),
             ).fetchone()
         return self._serialize(row) or {}
+
+    def get_with_events(self, email_id: str) -> dict:
+        activity = self.get(email_id)
+        activity["events"] = self.list_events(email_id)
+        return activity
 
     def list_all(self) -> dict[str, dict]:
         with self._lock, self._connect() as connection:
@@ -121,7 +146,14 @@ class OperatorStateStore:
                 """,
                 (int(reviewed), now if reviewed else None, reviewer if reviewed else None, now, email_id),
             )
-        return self.get(email_id)
+        self.log_event(
+            email_id,
+            "reviewed" if reviewed else "review_removed",
+            "Operator reviewed" if reviewed else "Review mark removed",
+            "Case marked as reviewed." if reviewed else "The operator review mark was removed.",
+            reviewer,
+        )
+        return self.get_with_events(email_id)
 
     def mark_opened(self, email_id: str) -> dict:
         self.ensure_emails([email_id])
@@ -135,7 +167,15 @@ class OperatorStateStore:
                 """,
                 (now, now, email_id),
             )
-        return self.get(email_id)
+        self.log_event(
+            email_id,
+            "opened",
+            "Email opened",
+            "Opened in the verification workspace.",
+            "operator",
+            dedupe_seconds=30,
+        )
+        return self.get_with_events(email_id)
 
     def latest_reviewed(self) -> Optional[dict]:
         with self._lock, self._connect() as connection:
@@ -164,6 +204,13 @@ class OperatorStateStore:
                 """,
                 (email_id, recipient, subject, body, saved_at),
             )
+        self.log_event(
+            email_id,
+            "draft_saved",
+            "Response draft saved",
+            "Operator-approved edits were saved locally. No email was sent.",
+            "operator",
+        )
         return {
             "email_id": email_id,
             "recipient": recipient,
@@ -179,3 +226,65 @@ class OperatorStateStore:
                 (email_id,),
             ).fetchone()
         return dict(row) if row is not None else None
+
+    def log_event(
+        self,
+        email_id: str,
+        event_type: str,
+        title: str,
+        detail: str = "",
+        actor: str = "system",
+        dedupe_seconds: int = 0,
+    ) -> dict:
+        occurred_at = utc_now()
+        with self._lock, self._connect() as connection:
+            if dedupe_seconds:
+                latest = connection.execute(
+                    """
+                    SELECT occurred_at FROM activity_events
+                    WHERE email_id = ? AND event_type = ?
+                    ORDER BY occurred_at DESC LIMIT 1
+                    """,
+                    (email_id, event_type),
+                ).fetchone()
+                if latest:
+                    latest_at = datetime.fromisoformat(latest["occurred_at"].replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - latest_at).total_seconds() < dedupe_seconds:
+                        return {
+                            "email_id": email_id,
+                            "event_type": event_type,
+                            "title": title,
+                            "detail": detail,
+                            "actor": actor,
+                            "occurred_at": latest["occurred_at"],
+                        }
+            connection.execute(
+                """
+                INSERT INTO activity_events (email_id, event_type, title, detail, actor, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (email_id, event_type, title, detail, actor, occurred_at),
+            )
+        return {
+            "email_id": email_id,
+            "event_type": event_type,
+            "title": title,
+            "detail": detail,
+            "actor": actor,
+            "occurred_at": occurred_at,
+        }
+
+    def list_events(self, email_id: str, limit: int = 50) -> list[dict]:
+        safe_limit = max(1, min(limit, 100))
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT email_id, event_type, title, detail, actor, occurred_at
+                FROM activity_events
+                WHERE email_id = ?
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT ?
+                """,
+                (email_id, safe_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]

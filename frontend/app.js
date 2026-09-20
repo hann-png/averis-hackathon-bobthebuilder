@@ -83,7 +83,14 @@
     selectedId: "email_004",
     statusFilter: "FLAGGED",
     categoryFilter: "ALL",
+    timeFilter: "ALL",
     search: "",
+    savedViews: JSON.parse(localStorage.getItem("sdoc-saved-views") || "[]"),
+    activeSavedView: "",
+    viewPredicate: "",
+    pendingDraftSave: null,
+    assistantDock: "left",
+    assistantDragMoved: false,
     visibleCount: 20,
     source: "Demo data"
   };
@@ -169,6 +176,7 @@
     try {
       const metadata = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/opened`), 5000, { method: "POST" });
       state.metadata.set(emailId, metadata);
+      if (state.selectedId === emailId) renderAudit(state.submission[emailId]);
     } catch (_) { /* opening an email must never be blocked by activity logging */ }
   }
 
@@ -264,6 +272,19 @@
     $("#connectionDot").classList.toggle("offline", state.source === "Preview data");
   }
 
+  function matchesTimeFilter(emailId) {
+    if (state.timeFilter === "ALL") return true;
+    const metadata = state.metadata.get(emailId) || {};
+    const field = state.timeFilter === "REVIEWED" ? "reviewed_at" : state.timeFilter === "OPENED" ? "last_opened_at" : "processed_at";
+    const value = metadata[field];
+    const timestamp = value ? new Date(value) : null;
+    if (!timestamp || Number.isNaN(timestamp.getTime())) return false;
+    const age = Date.now() - timestamp.getTime();
+    if (state.timeFilter === "TODAY") return happenedToday(value);
+    if (state.timeFilter === "24H") return age >= 0 && age <= 24 * 60 * 60 * 1000;
+    return age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+  }
+
   function filteredIds() {
     const query = state.search.toLowerCase();
     return Object.entries(state.submission).filter(([id, item]) => {
@@ -275,7 +296,12 @@
       const queryMatch = !query || id.toLowerCase().includes(query) ||
         (email?.subject || "").toLowerCase().includes(query) ||
         (email?.from || "").toLowerCase().includes(query);
-      return statusMatch && categoryMatch && queryMatch;
+      const viewMatch = state.viewPredicate === "wrong_doc_type"
+        ? item.review_reason === "wrong_doc_type"
+        : state.viewPredicate === "unreviewed_bl"
+          ? item.category === "BL_COMPARISON" && !state.reviewed.has(id)
+          : true;
+      return statusMatch && categoryMatch && queryMatch && matchesTimeFilter(id) && viewMatch;
     }).map(([id]) => id).sort((a, b) => {
       if (a === state.selectedId) return -1;
       if (b === state.selectedId) return 1;
@@ -310,6 +336,109 @@
     }).join("");
 
     $$(".queue-item", queue).forEach(button => button.addEventListener("click", () => selectEmail(button.dataset.emailId)));
+  }
+
+  function renderSavedViews() {
+    const select = $("#savedViewSelect");
+    if (!select) return;
+    const customOptions = state.savedViews.map(view => `<option value="${escapeHtml(view.id)}">${escapeHtml(view.name)}</option>`).join("");
+    select.innerHTML = `<option value="">Saved views</option>
+      <optgroup label="Suggested">
+        <option value="builtin:today-mismatch">Today’s mismatches</option>
+        <option value="builtin:wrong-doc">Wrong document type</option>
+        <option value="builtin:unreviewed-bl">Unreviewed BL comparisons</option>
+      </optgroup>
+      ${customOptions ? `<optgroup label="My views">${customOptions}</optgroup>` : ""}`;
+    select.value = state.activeSavedView;
+    $("#deleteViewButton").hidden = !state.activeSavedView || state.activeSavedView.startsWith("builtin:");
+  }
+
+  function clearSavedViewSelection() {
+    if (!state.activeSavedView && !state.viewPredicate) return;
+    state.activeSavedView = "";
+    state.viewPredicate = "";
+    renderSavedViews();
+  }
+
+  function syncFilterControls() {
+    $("#categoryFilter").value = state.categoryFilter;
+    $("#timeFilter").value = state.timeFilter;
+    $("#searchInput").value = state.search;
+    $$("#statusFilters button").forEach(button => button.classList.toggle("active", button.dataset.status === (["MISMATCH", "NEEDS_REVIEW"].includes(state.statusFilter) ? "FLAGGED" : state.statusFilter)));
+  }
+
+  function applySavedView(viewId) {
+    state.activeSavedView = viewId;
+    state.viewPredicate = "";
+    if (viewId === "builtin:today-mismatch") {
+      Object.assign(state, { statusFilter: "MISMATCH", categoryFilter: "ALL", timeFilter: "TODAY", search: "" });
+    } else if (viewId === "builtin:wrong-doc") {
+      Object.assign(state, { statusFilter: "NEEDS_REVIEW", categoryFilter: "ALL", timeFilter: "ALL", search: "", viewPredicate: "wrong_doc_type" });
+    } else if (viewId === "builtin:unreviewed-bl") {
+      Object.assign(state, { statusFilter: "ALL", categoryFilter: "BL_COMPARISON", timeFilter: "ALL", search: "", viewPredicate: "unreviewed_bl" });
+    } else {
+      const view = state.savedViews.find(candidate => candidate.id === viewId);
+      if (view) Object.assign(state, view.filters);
+      else state.activeSavedView = "";
+    }
+    state.visibleCount = 20;
+    syncFilterControls();
+    renderSavedViews();
+    renderQueue();
+    const first = filteredIds()[0];
+    if (first) selectEmail(first, { silent: true });
+  }
+
+  function openSaveViewModal() {
+    const modal = $("#saveViewModal");
+    $("#savedViewName").value = "";
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => modal.classList.add("visible"));
+    setTimeout(() => $("#savedViewName").focus(), 220);
+  }
+
+  function closeModal(modalId) {
+    const modal = $(`#${modalId}`);
+    if (!modal) return;
+    modal.classList.remove("visible");
+    modal.setAttribute("aria-hidden", "true");
+    setTimeout(() => { if (!modal.classList.contains("visible")) modal.hidden = true; }, 260);
+  }
+
+  function saveCurrentView() {
+    const name = $("#savedViewName").value.trim();
+    if (!name) {
+      showToast("Give this view a name", "warning");
+      return;
+    }
+    const view = {
+      id: `view-${Date.now()}`,
+      name: name.slice(0, 48),
+      filters: {
+        statusFilter: state.statusFilter,
+        categoryFilter: state.categoryFilter,
+        timeFilter: state.timeFilter,
+        search: state.search,
+        viewPredicate: state.viewPredicate
+      }
+    };
+    state.savedViews.push(view);
+    state.activeSavedView = view.id;
+    localStorage.setItem("sdoc-saved-views", JSON.stringify(state.savedViews));
+    closeModal("saveViewModal");
+    renderSavedViews();
+    showToast("Workspace view saved");
+  }
+
+  function deleteCurrentView() {
+    if (!state.activeSavedView || state.activeSavedView.startsWith("builtin:")) return;
+    state.savedViews = state.savedViews.filter(view => view.id !== state.activeSavedView);
+    localStorage.setItem("sdoc-saved-views", JSON.stringify(state.savedViews));
+    state.activeSavedView = "";
+    state.viewPredicate = "";
+    renderSavedViews();
+    showToast("Saved view removed");
   }
 
   function resultCopy(item) {
@@ -399,6 +528,13 @@
       if (!draft.notification_eligible) throw new Error("This email is not eligible for a clarification draft.");
       state.drafts.set(emailId, draft);
       renderDraft(draft);
+      if (state.metadataOnline) {
+        try {
+          const metadata = await fetchJson(apiUrl(`/email/${encodeURIComponent(emailId)}/metadata`), 5000);
+          state.metadata.set(emailId, metadata);
+          if (state.selectedId === emailId) renderAudit(state.submission[emailId]);
+        } catch (_) { /* the draft remains usable if the audit refresh fails */ }
+      }
     } catch (error) {
       if (state.selectedId === emailId) renderDraftError(error.name === "AbortError" ? "The draft service took too long to respond." : error.message);
     }
@@ -414,10 +550,35 @@
     showToast("Response draft copied");
   }
 
-  async function saveDraft(button) {
+  function openDraftPreview(button) {
     const emailId = state.selectedId;
+    const draft = state.drafts.get(emailId);
     const subject = $("#draftSubject")?.value.trim() || "";
     const body = $("#draftBody")?.value.trim() || "";
+    if (!draft || !subject || !body) {
+      showToast("Subject and message cannot be empty", "warning");
+      return;
+    }
+    state.pendingDraftSave = { button, emailId, subject, body };
+    $("#draftPreviewRecipient").textContent = draft.recipient || "Recipient unavailable";
+    $("#draftPreviewSubject").textContent = subject;
+    $("#draftPreviewBody").textContent = body;
+    const flags = [];
+    flags.push(subject !== (draft.subject || "").trim() ? "Subject edited" : "Subject unchanged");
+    flags.push(body !== (draft.body || "").trim() ? "Message edited" : "Message unchanged");
+    $("#draftPreviewFlags").innerHTML = flags.map(flag => `<span class="${flag.endsWith("unchanged") ? "unchanged" : ""}">${escapeHtml(flag)}</span>`).join("");
+    $("#draftConfirmCheck").checked = false;
+    $("#confirmDraftSave").disabled = true;
+    const modal = $("#draftPreviewModal");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => modal.classList.add("visible"));
+  }
+
+  async function saveDraft(button, pending = null) {
+    const emailId = pending?.emailId || state.selectedId;
+    const subject = pending?.subject || $("#draftSubject")?.value.trim() || "";
+    const body = pending?.body || $("#draftBody")?.value.trim() || "";
     if (!subject || !body) {
       showToast("Subject and message cannot be empty", "warning");
       return;
@@ -435,7 +596,13 @@
       const current = state.drafts.get(emailId) || {};
       const saved = { ...current, ...(result.draft || {}), subject, body, is_saved: Boolean(result.local_check?.saved), saved_at: result.draft?.saved_at };
       state.drafts.set(emailId, saved);
-      renderDraft(saved);
+      if (result.activity) state.metadata.set(emailId, result.activity);
+      if (state.selectedId === emailId) {
+        renderDraft(saved);
+        renderAudit(state.submission[emailId]);
+      }
+      closeModal("draftPreviewModal");
+      state.pendingDraftSave = null;
       showToast(result.local_check?.saved ? "Draft saved safely" : "Draft prepared");
     } catch (error) {
       showToast(error.name === "AbortError" ? "Save request timed out" : "Could not save the draft", "error");
@@ -467,15 +634,43 @@
     const issueCopy = item.status === "MISMATCH"
       ? `${item.defect_fields?.length || 0} ${(item.defect_fields?.length || 0) === 1 ? "discrepancy" : "discrepancies"}`
       : item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason || "Review required") : "Verified clean";
+    const fieldActions = item.status === "MISMATCH" && item.defect_fields?.length
+      ? `<span class="assistant-field-actions">${item.defect_fields.slice(0, 3).map(field => `<span data-focus-field="${escapeHtml(field)}">${escapeHtml(titleCase(field))}</span>`).join("")}</span>`
+      : "";
     return `<button class="assistant-result-card ${cls}" type="button" data-open-email="${escapeHtml(id)}" data-open-tab="${escapeHtml(requestedTab)}">
       <span class="assistant-result-accent"></span>
       <span class="assistant-result-content">
         <span class="assistant-result-top"><strong>${escapeHtml(formatId(id))}</strong><i class="status-chip ${cls}">${statusLabel(item.status)}</i></span>
         <span class="assistant-result-subject">${escapeHtml(displaySubject(email?.subject) || titleCase(item.category))}</span>
         <span class="assistant-result-meta">${escapeHtml(issueCopy)}<i></i>${escapeHtml(titleCase(item.category))}</span>
+        ${fieldActions}
       </span>
       <span class="assistant-result-open"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
     </button>`;
+  }
+
+  function updateAssistantContext() {
+    const item = state.submission[state.selectedId];
+    const email = state.emails.get(state.selectedId);
+    if (!item) return;
+    $("#assistantContextId").textContent = formatId(state.selectedId);
+    $("#assistantContextSubject").textContent = displaySubject(email?.subject) || titleCase(item.category);
+    $("#assistantDraftAction").hidden = item.status !== "MISMATCH";
+  }
+
+  function runContextAction(action) {
+    const id = formatId(state.selectedId);
+    const prompts = {
+      explain: `Explain the discrepancies for ${id}`,
+      summarize: `Summarize ${id}`,
+      related: `Find emails related to ${id}`,
+      draft: `Open the response draft for ${id}`
+    };
+    if (action === "draft" && state.submission[state.selectedId]?.status !== "MISMATCH") {
+      showToast("Drafts are available for mismatched emails", "warning");
+      return;
+    }
+    submitAssistantPrompt(prompts[action]);
   }
 
   function assistantMessageHtml(message) {
@@ -518,8 +713,28 @@
     if (explicitId) {
       const id = `email_${String(explicitId[1]).padStart(3, "0")}`;
       if (!state.submission[id]) return { role: "assistant", text: `I couldn’t find ${formatId(id)} in the current dataset.` };
-      await loadEmail(id);
+      const email = await loadEmail(id);
+      const item = state.submission[id];
       const wantsDraft = /draft|reply|response/.test(query) && state.submission[id].status === "MISMATCH";
+      if (/summar/.test(query)) {
+        return { role: "assistant", text: `${formatId(id)} is “${displaySubject(email.subject)}” from ${email.from || "an unavailable sender"}. It is classified as ${titleCase(item.category)}, has status ${titleCase(item.status)}, and includes ${(email.attachments || []).length} attachment${(email.attachments || []).length === 1 ? "" : "s"}.`, cards: [{ id }] };
+      }
+      if (/explain|why|discrepanc|difference/.test(query)) {
+        const fields = item.defect_fields || [];
+        const text = item.status === "MISMATCH"
+          ? `${formatId(id)} is mismatched because ${fields.map(titleCase).join(" and ") || "the compared values"} differ between the shipping instruction and Bill of Lading. Select a field below to inspect it.`
+          : item.status === "NEEDS_REVIEW" ? `${formatId(id)} requires human review because of ${titleCase(item.review_reason)}.` : `${formatId(id)} has no recorded discrepancies.`;
+        return { role: "assistant", text, cards: [{ id }] };
+      }
+      if (/related|similar/.test(query)) {
+        const sender = String(email.from || "").toLowerCase();
+        const scored = Object.keys(state.submission).filter(candidate => candidate !== id).map(candidate => {
+          const candidateEmail = state.emails.get(candidate) || {};
+          const score = Number(state.submission[candidate].category === item.category) + 2 * Number(Boolean(sender) && String(candidateEmail.from || "").toLowerCase() === sender);
+          return { candidate, score };
+        }).filter(result => result.score).sort((a, b) => b.score - a.score || idNumber(b.candidate) - idNumber(a.candidate)).map(result => result.candidate);
+        return { role: "assistant", text: `I found ${scored.length} emails related by sender or category to ${formatId(id)}.`, metric: { value: scored.length, label: "Related emails" }, cards: await prepareAssistantCards(scored, 4) };
+      }
       return { role: "assistant", text: `${formatId(id)} is ready. Open it to inspect the ${wantsDraft ? "response draft" : "verification result"}.`, cards: [{ id, tab: wantsDraft ? "draft" : "comparison" }] };
     }
 
@@ -629,7 +844,7 @@
         role: "assistant",
         text: payload.message,
         metric: payload.metric || null,
-        cards: (payload.results || []).map(result => ({ id: result.email_id, tab: result.tab || "comparison" })),
+        cards: (payload.results || []).map(result => ({ id: result.email_id, tab: result.tab || "comparison", fields: result.defect_fields || [] })),
         source: payload.blocked
           ? "Security policy"
           : payload.interpreted_by === "gemini"
@@ -666,6 +881,7 @@
   }
 
   function openAssistant(mode = "compact") {
+    updateAssistantContext();
     if (mode === "full") {
       closeAssistantCompact();
       const panel = $("#assistantFull");
@@ -679,6 +895,10 @@
       setTimeout(() => $("#assistantFull [data-assistant-input]")?.focus(), 360);
     } else {
       const panel = $("#assistantCompact");
+      if (!panel.style.top) {
+        panel.style.right = "auto";
+        panel.style.left = state.assistantDock === "left" ? "23px" : `${Math.max(14, window.innerWidth - panel.offsetWidth - 23)}px`;
+      }
       panel.classList.add("visible");
       panel.setAttribute("aria-hidden", "false");
       $("#assistantOrb").classList.add("compact-open");
@@ -705,7 +925,7 @@
     if (restoreNavigation) setActiveNav($(`.nav-item[data-nav="${state.lastDashboardNav}"]`) || $('.nav-item[data-nav="overview"]'));
   }
 
-  async function navigateFromAssistant(emailId, tabName = "comparison") {
+  async function navigateFromAssistant(emailId, tabName = "comparison", fieldName = "") {
     const item = state.submission[emailId];
     if (!item) return;
     const fullWasOpen = $("#assistantFull").classList.contains("visible");
@@ -718,15 +938,30 @@
     const navName = item.status === "MISMATCH" ? "mismatch" : item.status === "NEEDS_REVIEW" ? "review" : "verified";
     state.lastDashboardNav = navName;
     state.statusFilter = item.status;
+    state.categoryFilter = "ALL";
+    state.timeFilter = "ALL";
+    state.activeSavedView = "";
+    state.viewPredicate = "";
     state.search = "";
     state.visibleCount = 20;
-    $("#searchInput").value = "";
+    syncFilterControls();
+    renderSavedViews();
     setActiveNav($(`.nav-item[data-nav="${navName}"]`));
     $$("#statusFilters button").forEach(button => button.classList.toggle("active", button.dataset.status === (item.status === "OK" ? "OK" : "FLAGGED")));
     renderQueue();
     await selectEmail(emailId, { silent: true });
     setTab(tabName === "draft" && item.status === "MISMATCH" ? "draft" : "comparison");
     $(".detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (fieldName) {
+      setTab("comparison");
+      setTimeout(() => {
+        const row = $(`.comparison-row[data-field="${CSS.escape(fieldName)}"]`);
+        if (!row) return;
+        row.classList.remove("focus-highlight");
+        requestAnimationFrame(() => row.classList.add("focus-highlight"));
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 460);
+    }
     state.assistantMessages.push({ role: "assistant", text: `${formatId(emailId)} is open in the verification workspace.` });
     renderAssistantMessages();
   }
@@ -738,7 +973,7 @@
       const different = defects.has(key);
       const siValue = fields.si?.[key] || (item.category === "BL_COMPARISON" ? "Source value unavailable" : "Not applicable");
       const blValue = fields.bl?.[key] || (item.category === "BL_COMPARISON" ? "Source value unavailable" : "Not applicable");
-      return `<div class="comparison-row ${different ? "is-different" : ""}">
+      return `<div class="comparison-row ${different ? "is-different" : ""}" data-field="${escapeHtml(key)}">
         <div class="comparison-cell field-name">${label}</div>
         <div class="comparison-cell"><span class="cell-value">${escapeHtml(siValue)}</span></div>
         <div class="comparison-cell"><span class="cell-value">${escapeHtml(blValue)}</span></div>
@@ -769,14 +1004,28 @@
 
   function renderAudit(item) {
     const metadata = state.metadata.get(state.selectedId);
-    const reviewedAt = metadata?.reviewed_at ? new Date(metadata.reviewed_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "Human review";
-    const events = [
-      ["Email classified", `Assigned to ${titleCase(item.category)}.`, "Stage 1"],
-      ...(item.category === "BL_COMPARISON" ? [["Documents extracted", "Seven canonical shipping fields evaluated.", "Stage 2"]] : []),
-      [item.status === "NEEDS_REVIEW" ? "Case escalated" : "Verification completed", item.status === "MISMATCH" ? `${item.defect_fields.length} mismatched field(s) surfaced.` : item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason) : "No mismatch detected.", "Stage 3"],
-      ...(state.reviewed.has(state.selectedId) ? [["Operator reviewed", "Case marked as reviewed and saved to operator activity.", reviewedAt]] : [])
+    const formatTime = value => {
+      const parsed = value ? new Date(value) : null;
+      return parsed && !Number.isNaN(parsed.getTime())
+        ? parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+        : "Pipeline stage";
+    };
+    const processedAt = formatTime(metadata?.processed_at);
+    const pipelineEvents = [
+      { title: "Email classified", detail: `Assigned to ${titleCase(item.category)}.`, occurred_at: processedAt },
+      ...(item.category === "BL_COMPARISON" ? [{ title: "Documents extracted", detail: "Seven canonical shipping fields evaluated.", occurred_at: processedAt }] : []),
+      {
+        title: item.status === "NEEDS_REVIEW" ? "Case escalated" : "Verification completed",
+        detail: item.status === "MISMATCH" ? `${item.defect_fields.length} mismatched field(s) surfaced.` : item.status === "NEEDS_REVIEW" ? titleCase(item.review_reason) : "No mismatch detected.",
+        occurred_at: processedAt
+      }
     ];
-    $("#auditTimeline").innerHTML = events.map(([title, description, time]) => `<div class="timeline-item"><span class="timeline-dot"></span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(description)}</p><time>${escapeHtml(time)}</time></div>`).join("");
+    const activityEvents = Array.isArray(metadata?.events) ? [...metadata.events].reverse() : [];
+    if (!activityEvents.length && state.reviewed.has(state.selectedId)) {
+      activityEvents.push({ title: "Operator reviewed", detail: "Case marked as reviewed in this browser.", occurred_at: metadata?.reviewed_at || state.reviewHistory.find(entry => entry.id === state.selectedId)?.reviewedAt });
+    }
+    const events = [...pipelineEvents, ...activityEvents];
+    $("#auditTimeline").innerHTML = events.map(event => `<div class="timeline-item"><span class="timeline-dot"></span><strong>${escapeHtml(event.title)}</strong><p>${escapeHtml(event.detail || "Activity recorded.")}</p><time>${escapeHtml(event.occurred_at?.includes?.("T") ? formatTime(event.occurred_at) : event.occurred_at || "Activity")}${event.actor ? ` · ${escapeHtml(titleCase(event.actor))}` : ""}</time></div>`).join("");
   }
 
   async function selectEmail(emailId, options = {}) {
@@ -806,6 +1055,7 @@
     renderComparison(item, fields);
     renderAttachments(email);
     renderAudit(item);
+    updateAssistantContext();
     const draftTabButton = $(".draft-tab-button");
     draftTabButton.hidden = item.status !== "MISMATCH";
     if (item.status !== "MISMATCH" && draftTabButton.classList.contains("active")) setTab("comparison");
@@ -891,9 +1141,10 @@
 
   function syncSidebarButton() {
     const collapsed = $(".app-shell").classList.contains("sidebar-collapsed");
-    const trigger = $("#openSidebar");
-    trigger.setAttribute("aria-expanded", String(!collapsed));
-    trigger.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
+    [$("#openSidebar"), $("#assistantSidebarToggle")].filter(Boolean).forEach(trigger => {
+      trigger.setAttribute("aria-expanded", String(!collapsed));
+      trigger.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
+    });
   }
 
   function toggleSidebar() {
@@ -908,6 +1159,113 @@
     setTimeout(() => moveNavSelection(), 760);
   }
 
+  const commandIcon = '<svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg>';
+  const commandActions = [
+    { id: "assistant", label: "Open Ask BOB", detail: "Search and navigate the verification workspace", hint: "AI" },
+    { id: "mismatch", label: "Show mismatches", detail: "Open every confirmed document discrepancy", hint: "46" },
+    { id: "review", label: "Open review queue", detail: "Cases waiting for an operator decision", hint: "20" },
+    { id: "today", label: "Today’s mismatches", detail: "Apply the timestamped saved view", hint: "View" },
+    { id: "verified", label: "Show verified email", detail: "Browse clean pipeline results", hint: "OK" },
+    { id: "theme", label: "Switch appearance", detail: "Toggle light and dark mode", hint: "Theme" }
+  ];
+
+  function renderCommandResults(query = "") {
+    const normalized = query.trim().toLowerCase();
+    const actions = commandActions.filter(action => !normalized || `${action.label} ${action.detail}`.toLowerCase().includes(normalized));
+    const emails = normalized ? Object.keys(state.submission).filter(id => {
+      const email = state.emails.get(id) || {};
+      return `${id} ${email.subject || ""} ${email.from || ""}`.toLowerCase().includes(normalized);
+    }).slice(0, 8) : [];
+    const actionHtml = actions.map(action => `<button class="command-result" type="button" data-command="${action.id}"><span class="command-result-icon">${commandIcon}</span><span><strong>${escapeHtml(action.label)}</strong><small>${escapeHtml(action.detail)}</small></span><kbd>${escapeHtml(action.hint)}</kbd></button>`).join("");
+    const emailHtml = emails.map(id => {
+      const email = state.emails.get(id) || {};
+      return `<button class="command-result" type="button" data-command-email="${escapeHtml(id)}"><span class="command-result-icon">${commandIcon}</span><span><strong>${escapeHtml(formatId(id))}</strong><small>${escapeHtml(displaySubject(email.subject) || titleCase(state.submission[id].category))}</small></span><kbd>Open</kbd></button>`;
+    }).join("");
+    $("#commandPaletteTitle").textContent = emails.length ? "Emails and actions" : "Quick actions";
+    $("#commandResults").innerHTML = actionHtml + emailHtml || `<div class="empty-state"><div><strong>No matching command</strong><p>Try an email ID, sender, subject, or workspace action.</p></div></div>`;
+    $(".command-result")?.classList.add("active");
+  }
+
+  function openCommandPalette() {
+    const palette = $("#commandPalette");
+    palette.hidden = false;
+    palette.setAttribute("aria-hidden", "false");
+    $("#commandInput").value = "";
+    renderCommandResults();
+    requestAnimationFrame(() => palette.classList.add("visible"));
+    setTimeout(() => $("#commandInput").focus(), 160);
+  }
+
+  function closeCommandPalette() {
+    const palette = $("#commandPalette");
+    palette.classList.remove("visible");
+    palette.setAttribute("aria-hidden", "true");
+    setTimeout(() => { if (!palette.classList.contains("visible")) palette.hidden = true; }, 260);
+  }
+
+  function runCommand(command) {
+    closeCommandPalette();
+    if (command === "assistant") return openAssistant("full");
+    if (command === "today") return applySavedView("builtin:today-mismatch");
+    if (command === "theme") return setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+    const nav = $(`.nav-item[data-nav="${command}"]`);
+    if (nav) nav.click();
+  }
+
+  function clampFloatingElement(element) {
+    if (!element?.style.top || window.matchMedia("(max-width: 640px)").matches) return;
+    const rect = element.getBoundingClientRect();
+    const x = Math.max(12, Math.min(parseFloat(element.style.left) || rect.left, window.innerWidth - rect.width - 12));
+    const y = Math.max(12, Math.min(parseFloat(element.style.top) || rect.top, window.innerHeight - rect.height - 12));
+    element.style.left = `${x}px`;
+    element.style.top = `${y}px`;
+  }
+
+  function makeDraggable(handle, element, options = {}) {
+    let drag = null;
+    handle.addEventListener("pointerdown", event => {
+      const interactive = event.target.closest("button, input, textarea, a");
+      if (window.matchMedia("(max-width: 640px)").matches || event.button !== 0 || (interactive && interactive !== handle)) return;
+      const rect = element.getBoundingClientRect();
+      drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x: rect.left, y: rect.top, moved: false };
+      element.style.right = "auto";
+      element.style.bottom = "auto";
+      element.style.left = `${rect.left}px`;
+      element.style.top = `${rect.top}px`;
+      element.classList.add("is-dragging");
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener("pointermove", event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (Math.hypot(dx, dy) > 5) drag.moved = true;
+      if (!drag.moved) return;
+      const x = Math.max(12, Math.min(drag.x + dx, window.innerWidth - element.offsetWidth - 12));
+      const y = Math.max(12, Math.min(drag.y + dy, window.innerHeight - element.offsetHeight - 12));
+      element.style.left = `${x}px`;
+      element.style.top = `${y}px`;
+    });
+    const finish = event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const moved = drag.moved;
+      drag = null;
+      element.classList.remove("is-dragging");
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      if (!moved) return;
+      const rect = element.getBoundingClientRect();
+      const dockLeft = rect.left + rect.width / 2 < window.innerWidth / 2;
+      element.style.left = `${dockLeft ? 14 : window.innerWidth - rect.width - 14}px`;
+      state.assistantDock = dockLeft ? "left" : "right";
+      if (options.orb) {
+        state.assistantDragMoved = true;
+        setTimeout(() => { state.assistantDragMoved = false; }, 80);
+      }
+    };
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+  }
+
   function bindEvents() {
     $("#themeToggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
     $("#refreshButton").addEventListener("click", refreshData);
@@ -918,9 +1276,16 @@
       setTimeout(() => $("#retryButton svg").style.animation = "", 800);
     });
     $("#loadMoreButton").addEventListener("click", () => { state.visibleCount += 20; renderQueue(); });
-    $("#searchInput").addEventListener("input", event => { state.search = event.target.value.trim(); state.visibleCount = 20; renderQueue(); });
-    $("#categoryFilter").addEventListener("change", event => { state.categoryFilter = event.target.value; state.visibleCount = 20; renderQueue(); });
+    $("#searchInput").addEventListener("input", event => { clearSavedViewSelection(); state.search = event.target.value.trim(); state.visibleCount = 20; renderQueue(); });
+    $("#categoryFilter").addEventListener("change", event => { clearSavedViewSelection(); state.categoryFilter = event.target.value; state.visibleCount = 20; renderQueue(); });
+    $("#timeFilter").addEventListener("change", event => { clearSavedViewSelection(); state.timeFilter = event.target.value; state.visibleCount = 20; renderQueue(); });
+    $("#savedViewSelect").addEventListener("change", event => applySavedView(event.target.value));
+    $("#saveViewButton").addEventListener("click", openSaveViewModal);
+    $("#deleteViewButton").addEventListener("click", deleteCurrentView);
+    $("#confirmSaveView").addEventListener("click", saveCurrentView);
+    $("#savedViewName").addEventListener("keydown", event => { if (event.key === "Enter") saveCurrentView(); });
     $$("#statusFilters button").forEach(button => button.addEventListener("click", () => {
+      clearSavedViewSelection();
       $$("#statusFilters button").forEach(item => item.classList.toggle("active", item === button));
       state.statusFilter = button.dataset.status;
       state.visibleCount = 20;
@@ -934,7 +1299,7 @@
       if (!button) return;
       const action = button.dataset.draftAction;
       if (action === "copy") copyDraft();
-      if (action === "save") saveDraft(button);
+      if (action === "save") openDraftPreview(button);
       if (["retry", "regenerate"].includes(action)) loadDraft(state.selectedId, { force: true });
     });
     $("#draftComposer").addEventListener("input", event => {
@@ -952,6 +1317,7 @@
       }
       closeAssistantFull(false);
       closeAssistantCompact();
+      clearSavedViewSelection();
       state.lastDashboardNav = button.dataset.nav;
       const status = button.dataset.focusStatus || "FLAGGED";
       setActiveNav(button);
@@ -967,15 +1333,45 @@
     document.addEventListener("keydown", event => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        $("#searchInput").focus();
+        openCommandPalette();
       }
       if (event.key === "Escape") {
+        if ($("#commandPalette").classList.contains("visible")) return closeCommandPalette();
+        const openModal = $(".modal-backdrop.visible");
+        if (openModal) return closeModal(openModal.id);
         $("#morePopover").hidden = true;
         if ($("#assistantFull").classList.contains("visible")) closeAssistantFull();
         else closeAssistantCompact();
         closeSidebar();
       }
     });
+
+    $("#commandInput").addEventListener("input", event => renderCommandResults(event.target.value));
+    $("#commandInput").addEventListener("keydown", event => {
+      const results = $$(".command-result");
+      if (!results.length) return;
+      const current = Math.max(0, results.findIndex(result => result.classList.contains("active")));
+      if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+        event.preventDefault();
+        results[current].classList.remove("active");
+        const next = event.key === "ArrowDown" ? (current + 1) % results.length : (current - 1 + results.length) % results.length;
+        results[next].classList.add("active");
+        results[next].scrollIntoView({ block: "nearest" });
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        results[current].click();
+      }
+    });
+    $("#commandResults").addEventListener("click", event => {
+      const target = event.target.closest("[data-command], [data-command-email]");
+      if (!target) return;
+      if (target.dataset.commandEmail) {
+        closeCommandPalette();
+        navigateFromAssistant(target.dataset.commandEmail);
+      } else runCommand(target.dataset.command);
+    });
+    $("#commandPalette").addEventListener("click", event => { if (event.target === event.currentTarget) closeCommandPalette(); });
 
     $("#moreButton").addEventListener("click", event => {
       const popover = $("#morePopover");
@@ -995,9 +1391,13 @@
     });
 
     $("#openSidebar").addEventListener("click", toggleSidebar);
+    $("#assistantSidebarToggle").addEventListener("click", toggleSidebar);
     $("#closeSidebar").addEventListener("click", closeSidebar);
     $("#mobileScrim").addEventListener("click", closeSidebar);
-    $("#assistantOrb").addEventListener("click", () => $("#assistantCompact").classList.contains("visible") ? closeAssistantCompact() : openAssistant("compact"));
+    $("#assistantOrb").addEventListener("click", () => {
+      if (state.assistantDragMoved) return;
+      $("#assistantCompact").classList.contains("visible") ? closeAssistantCompact() : openAssistant("compact");
+    });
     $("#closeAssistantCompact").addEventListener("click", closeAssistantCompact);
     $("#expandAssistant").addEventListener("click", () => openAssistant("full"));
     $("#closeAssistantFull").addEventListener("click", () => closeAssistantFull());
@@ -1011,13 +1411,28 @@
       submitAssistantPrompt($("[data-assistant-input]", form).value);
     }));
     document.addEventListener("click", event => {
+      const contextAction = event.target.closest("[data-context-action]");
+      if (contextAction) runContextAction(contextAction.dataset.contextAction);
       const prompt = event.target.closest("[data-assistant-prompt]");
       if (prompt) submitAssistantPrompt(prompt.dataset.assistantPrompt);
       const result = event.target.closest("[data-open-email]");
-      if (result) navigateFromAssistant(result.dataset.openEmail, result.dataset.openTab);
+      if (result) navigateFromAssistant(result.dataset.openEmail, result.dataset.openTab, event.target.closest("[data-focus-field]")?.dataset.focusField || "");
+    });
+    $$('[data-close-modal]').forEach(button => button.addEventListener("click", () => closeModal(button.dataset.closeModal)));
+    $$(".modal-backdrop").forEach(modal => modal.addEventListener("click", event => { if (event.target === modal) closeModal(modal.id); }));
+    $("#draftConfirmCheck").addEventListener("change", event => { $("#confirmDraftSave").disabled = !event.target.checked; });
+    $("#confirmDraftSave").addEventListener("click", () => {
+      const pending = state.pendingDraftSave;
+      if (pending && $("#draftConfirmCheck").checked) saveDraft(pending.button, pending);
     });
     $$(".assistant-add-button").forEach(button => button.addEventListener("click", () => showToast("Try: Open EMAIL_004 or show mismatched emails")));
-    window.addEventListener("resize", () => requestAnimationFrame(() => moveNavSelection()));
+    makeDraggable($("#assistantOrb"), $("#assistantOrb"), { orb: true });
+    makeDraggable($("#assistantCompactDragHandle"), $("#assistantCompact"));
+    window.addEventListener("resize", () => requestAnimationFrame(() => {
+      moveNavSelection();
+      clampFloatingElement($("#assistantOrb"));
+      clampFloatingElement($("#assistantCompact"));
+    }));
   }
 
   function openSidebar() { $("#sidebar").classList.add("open"); $("#mobileScrim").classList.add("visible"); }
@@ -1073,6 +1488,7 @@
     }
     bindEvents();
     renderAssistantMessages();
+    renderSavedViews();
     syncSidebarButton();
     requestAnimationFrame(() => moveNavSelection());
     state.submission = await loadSubmission();

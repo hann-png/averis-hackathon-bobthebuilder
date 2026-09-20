@@ -42,6 +42,12 @@ def test_mismatch_count_comes_from_dataset():
     assert response["results"][0]["email_id"] == "email_001"
 
 
+def test_workspace_count_is_not_reinterpreted_as_selected_email_explanation():
+    response = ask("How many discrepancies are there?", selected_email_id="email_001")
+    assert response["intent"] == "list_status"
+    assert response["metric"]["value"] == 1
+
+
 def test_wrong_document_type_filter():
     response = ask("Show emails with the wrong document type")
     assert response["metric"]["value"] == 1
@@ -53,6 +59,11 @@ def test_today_uses_processing_timestamp():
     assert response["metric"]["value"] == 1
 
 
+def test_last_24_hours_uses_processing_timestamp():
+    response = ask("Show mismatched emails in the last 24 hours")
+    assert response["metric"] == {"value": 1, "label": "Mismatches in the last 24 hours"}
+
+
 def test_latest_reviewed_uses_persistent_metadata():
     response = ask("Find my latest reviewed email")
     assert response["results"][0]["email_id"] == "email_002"
@@ -62,6 +73,27 @@ def test_draft_action_is_structured_and_read_only():
     response = ask("Open the response draft for EMAIL_001")
     assert response["results"][0]["action"] == "open_draft"
     assert response["results"][0]["tab"] == "draft"
+
+
+def test_context_summary_uses_verified_email_data():
+    response = ask("Summarize EMAIL_001")
+    assert response["intent"] == "summarize_email"
+    assert "Draft BL mismatch" in response["message"]
+    assert response["results"][0]["email_id"] == "email_001"
+
+
+def test_discrepancy_explanation_returns_evidence_fields():
+    response = ask("Explain the discrepancies for EMAIL_001")
+    assert response["intent"] == "explain_discrepancies"
+    assert "Consignee" in response["message"]
+    assert response["results"][0]["defect_fields"] == ["consignee"]
+
+
+def test_related_email_search_uses_sender_or_category():
+    response = ask("Find emails related to EMAIL_001")
+    assert response["intent"] == "related_emails"
+    assert response["metric"]["value"] == 1
+    assert response["results"][0]["email_id"] == "email_002"
 
 
 def test_prompt_injection_is_blocked_before_intent_parsing():

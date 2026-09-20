@@ -21,6 +21,9 @@ ALLOWED_INTENTS = {
     "latest_reviewed",
     "latest_opened",
     "open_draft",
+    "summarize_email",
+    "explain_discrepancies",
+    "related_emails",
     "search",
     "overview",
     "help",
@@ -56,12 +59,24 @@ def _rule_intent(query: str, selected_email_id: Optional[str]) -> Optional[dict]
     """Resolve high-confidence commands without spending model quota."""
     text = query.lower().strip()
     explicit_id = re.search(r"email[\s_-]?(\d{1,4})", text)
-    date_scope = "today" if re.search(r"\btoday\b", text) else "all"
+    date_scope = (
+        "24h" if re.search(r"last\s+24\s+hours?|past\s+24\s+hours?", text)
+        else "7d" if re.search(r"last\s+7\s+days?|past\s+7\s+days?|this\s+week", text)
+        else "today" if re.search(r"\btoday\b", text)
+        else "all"
+    )
 
     if explicit_id:
         email_id = _normalize_email_id(explicit_id.group(1))
+        explicit_intent = (
+            "open_draft" if re.search(r"draft|reply|response", text)
+            else "explain_discrepancies" if re.search(r"explain|why|discrepanc|difference", text)
+            else "summarize_email" if re.search(r"summar|overview", text)
+            else "related_emails" if re.search(r"related|similar", text)
+            else "find_email"
+        )
         return {
-            "intent": "open_draft" if re.search(r"draft|reply|response", text) else "find_email",
+            "intent": explicit_intent,
             "email_id": email_id,
             "date_scope": date_scope,
             "limit": 1,
@@ -74,6 +89,12 @@ def _rule_intent(query: str, selected_email_id: Optional[str]) -> Optional[dict]
         return {"intent": "latest_opened", "limit": 1}
     if re.search(r"draft|reply|response", text) and selected_email_id:
         return {"intent": "open_draft", "email_id": selected_email_id, "limit": 1}
+    if selected_email_id and re.search(r"^(?:please\s+)?explain\b|\b(?:this|current|selected)\s+(?:email|case)\b|\bwhy\s+is\s+(?:this|it)\b", text):
+        return {"intent": "explain_discrepancies", "email_id": selected_email_id, "limit": 1}
+    if re.search(r"summar", text) and selected_email_id:
+        return {"intent": "summarize_email", "email_id": selected_email_id, "limit": 1}
+    if re.search(r"related|similar", text) and selected_email_id:
+        return {"intent": "related_emails", "email_id": selected_email_id, "sort": "relevance", "limit": 6}
     if re.search(r"review", text):
         return {"intent": "list_status", "status": "NEEDS_REVIEW", "date_scope": date_scope, "sort": "newest", "limit": 1 if re.search(r"latest|newest|most recent", text) else 6}
     if re.search(r"mismatch|discrepanc", text):
@@ -126,7 +147,7 @@ User request: {redacted_query[:1000]}"""
                     "category": {"type": "string"},
                     "review_reason": {"type": "string"},
                     "email_id": {"type": "string"},
-                    "date_scope": {"type": "string", "enum": ["all", "today"]},
+                    "date_scope": {"type": "string", "enum": ["all", "today", "24h", "7d"]},
                     "sort": {"type": "string", "enum": ["newest", "oldest", "relevance"]},
                     "search_terms": {"type": "array", "items": {"type": "string"}},
                     "limit": {"type": "integer"},
@@ -178,6 +199,18 @@ def _today_matches(value: Optional[str], timezone_offset_minutes: int) -> bool:
     local_date = (timestamp.astimezone(timezone.utc) + offset).date()
     today = datetime.now(timezone.utc) + offset
     return local_date == today.date()
+
+
+def _date_scope_matches(value: Optional[str], scope: str, timezone_offset_minutes: int) -> bool:
+    if scope == "all":
+        return True
+    if scope == "today":
+        return _today_matches(value, timezone_offset_minutes)
+    timestamp = _parse_timestamp(value)
+    if not timestamp:
+        return False
+    age = datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)
+    return timedelta(0) <= age <= (timedelta(hours=24) if scope == "24h" else timedelta(days=7))
 
 
 def _result_card(email_id: str, submission: dict, metadata: dict, emails_by_id: dict, tab: str = "comparison") -> dict:
@@ -238,6 +271,55 @@ def run_assistant_query(
             message = f"{email_id.upper()} is ready. Open it to inspect the {'response draft' if tab == 'draft' else 'verification result'}."
         else:
             message = f"I couldn’t find {(email_id or 'that email').upper()} in the current dataset."
+    elif intent_name in {"summarize_email", "explain_discrepancies"}:
+        email_id = intent.get("email_id") or selected_email_id
+        if email_id not in submission:
+            message = "Select an email first so I can inspect it."
+        else:
+            item = submission[email_id]
+            email = email_map.get(email_id, {})
+            results = [email_id]
+            if intent_name == "summarize_email":
+                attachment_count = len(email.get("attachments") or [])
+                subject = str(email.get("subject") or email_id.upper()).strip()
+                sender = str(email.get("from") or "an unavailable sender").strip()
+                status_label = str(item.get("status") or "unknown").replace("_", " ").lower()
+                message = (
+                    f"{email_id.upper()} is “{subject}” from {sender}. It is classified as "
+                    f"{str(item.get('category') or 'unknown').replace('_', ' ').title()} with status "
+                    f"{status_label}, and includes {attachment_count} attachment{'s' if attachment_count != 1 else ''}."
+                )
+            elif item.get("status") == "MISMATCH":
+                fields = [str(field).replace("_", " ").title() for field in item.get("defect_fields") or []]
+                field_text = ", ".join(fields) if fields else "the compared document values"
+                message = f"{email_id.upper()} is mismatched because {field_text} differ between the shipping instruction and Bill of Lading. Select a field below to inspect the evidence."
+            elif item.get("status") == "NEEDS_REVIEW":
+                reason = str(item.get("review_reason") or "uncertain result").replace("_", " ").title()
+                message = f"{email_id.upper()} requires human review because of: {reason}."
+            else:
+                message = f"{email_id.upper()} is verified clean; no mismatch fields were recorded."
+    elif intent_name == "related_emails":
+        email_id = intent.get("email_id") or selected_email_id
+        if email_id not in submission:
+            message = "Select an email first so I can find related cases."
+        else:
+            source_item = submission[email_id]
+            source_email = email_map.get(email_id, {})
+            source_sender = str(source_email.get("from") or "").lower()
+            scored = []
+            for candidate_id in all_ids:
+                if candidate_id == email_id:
+                    continue
+                candidate = submission[candidate_id]
+                candidate_email = email_map.get(candidate_id, {})
+                score = int(candidate.get("category") == source_item.get("category"))
+                score += 2 * int(bool(source_sender) and str(candidate_email.get("from") or "").lower() == source_sender)
+                if score:
+                    scored.append((candidate_id, score))
+            scored.sort(key=lambda pair: (pair[1], _id_number(pair[0])), reverse=True)
+            results = [candidate_id for candidate_id, _ in scored]
+            message = f"I found {len(results)} emails related by sender or category to {email_id.upper()}."
+            metric = {"value": len(results), "label": "Related emails"}
     elif intent_name == "latest_reviewed":
         candidates = [(email_id, activity) for email_id, activity in metadata.items() if activity.get("reviewed") and activity.get("reviewed_at") and email_id in submission]
         candidates.sort(key=lambda pair: pair[1].get("reviewed_at") or "", reverse=True)
@@ -256,22 +338,27 @@ def run_assistant_query(
         else:
             results = [email_id for email_id in all_ids if submission[email_id].get("status") == status]
             label = {"MISMATCH": "Mismatches", "NEEDS_REVIEW": "Need review", "OK": "Verified clean"}.get(status, status.title())
-        if intent.get("date_scope") == "today":
-            results = [email_id for email_id in results if _today_matches(metadata.get(email_id, {}).get("processed_at"), timezone_offset_minutes)]
-            label = f"{label} today"
+        date_scope = intent.get("date_scope", "all")
+        if date_scope != "all":
+            results = [email_id for email_id in results if _date_scope_matches(metadata.get(email_id, {}).get("processed_at"), date_scope, timezone_offset_minutes)]
+            label = f"{label} {'today' if date_scope == 'today' else 'in the last 24 hours' if date_scope == '24h' else 'in the last 7 days'}"
         metric = {"value": len(results), "label": label}
         message = f"I found {len(results)} {label.lower()}."
     elif intent_name == "list_review_reason":
         reason = intent.get("review_reason") if intent.get("review_reason") in ALLOWED_REVIEW_REASONS else "wrong_doc_type"
         results = [email_id for email_id in all_ids if submission[email_id].get("review_reason") == reason]
-        if intent.get("date_scope") == "today":
-            results = [email_id for email_id in results if _today_matches(metadata.get(email_id, {}).get("processed_at"), timezone_offset_minutes)]
+        date_scope = intent.get("date_scope", "all")
+        if date_scope != "all":
+            results = [email_id for email_id in results if _date_scope_matches(metadata.get(email_id, {}).get("processed_at"), date_scope, timezone_offset_minutes)]
         label = reason.replace("_", " ").title()
         metric = {"value": len(results), "label": label}
         message = f"I found {len(results)} emails escalated for {label.lower()}."
     elif intent_name == "list_category":
         category = intent.get("category") if intent.get("category") in ALLOWED_CATEGORIES else "GENERAL"
         results = [email_id for email_id in all_ids if submission[email_id].get("category") == category]
+        date_scope = intent.get("date_scope", "all")
+        if date_scope != "all":
+            results = [email_id for email_id in results if _date_scope_matches(metadata.get(email_id, {}).get("processed_at"), date_scope, timezone_offset_minutes)]
         metric = {"value": len(results), "label": category.replace("_", " ").title()}
         message = f"I found {len(results)} emails classified as {metric['label']}."
     elif intent_name == "overview":
