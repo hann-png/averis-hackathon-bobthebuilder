@@ -1,4 +1,4 @@
-# BOB — Intelligent Shipping Document Verification & Discrepancy Management
+# BOB — Shipping Document Verification System
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
