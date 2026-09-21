@@ -164,6 +164,63 @@ flowchart TD
 
 ---
 
+## ⚙️ Implementation Details
+
+### 1. Resilient Multi-Key Gemini Pool & Concurrency Design (`gemini_client.py`)
+To process enterprise document batches without stalls or quota exhaustion, BOB implements a custom thread-safe client pool:
+- **Token Bucket Rate Limiting**: A `TokenBucketRateLimiter` dynamically throttles request throughput, calibrating the refill rate to `pool_size * RPM_PER_KEY` tokens/minute.
+- **Lock Contention Elimination**: Concurrency is optimized by holding the `threading.Lock` **only** during client index lookup and compare-and-swap rotation (<1ms). The lock is released *before* initiating the I/O-bound `generate_content` network call, allowing multiple worker threads to execute requests concurrently without blocking each other.
+- **Thread-Safe Key Rotation on 429**: When a key encounters a quota limit (`RESOURCE_EXHAUSTED` / HTTP 429), the client pool triggers a compare-and-swap rotation to the next active key. Only the worker that observed the failure advances the pointer, preventing race conditions from skipping multiple keys at once.
+- **Strictly Bounded Cooldown Cycles**: If all configured keys in the pool encounter rate limits within a single cycle, the pool enters a bounded sleep (`DEFAULT_COOLDOWN_SECONDS = 20.0s`). Cooldown is capped at `MAX_COOLDOWN_CYCLES = 2` (~40 seconds total). If quota remains unavailable, it raises a `RuntimeError`, allowing the caller to switch cleanly to local fallback rules rather than hanging indefinitely.
+- **Per-Email Disk Caching**: Raw AI responses and extraction payloads are cached on disk (`data/cache/`), enabling interrupted runs to resume immediately without re-burning API quota.
+
+### 2. The AI-vs-Deterministic Architectural Split
+A core architectural principle in BOB is strict separation between **probabilistic perception** and **deterministic verification**:
+- **AI Where Judgment Matters (Perception & Natural Language)**: LLMs (Gemini 3.5 Flash Lite) handle tasks requiring linguistic adaptability and context:
+  - **Email Intent Classification** (`classifier.py`): Discriminating nuanced logistics correspondence (e.g. routine operational digests mentioning an SI versus genuine comparison requests).
+  - **Multi-Format Extraction** (`extractor_text.py`, `extractor_docs.py`): Parsing variable visual and spatial layouts across PDFs, Word documents, Excel spreadsheets, and plain text.
+  - **Discrepancy Summaries** (`explainer.py`): Translating raw field deltas into concise, human-friendly root-cause explanations for operators.
+- **Pure Deterministic Code Where Correctness Must Be Guaranteed (Comparison & Escalation)**: To eliminate hallucinations and guarantee zero-defect compliance, no AI model is permitted to decide whether documents match or escalate:
+  - **Field Comparison** (`comparator.py`): Executes pure Python normalization—stripping legal corporate suffixes, collapsing whitespace, handling negotiable `"TO ORDER OF..."` consignee clauses, mapping UN/LOCODE port aliases, extracting numeric container counts (`4 x 40'HC` → `4`), and enforcing weight delta thresholds (`≤ 1.0 KG`).
+  - **Reliability Escalation** (`escalation.py`): Enforces deterministic business rules for missing attachments, unreadable scans, wrong document types (e.g. commercial invoices), and placeholder tokens (`???`, `TBA`, `______`) with 100% auditable reason codes.
+
+### 3. Confidence Scoring & Synonym-Dictionary Cross-Check (`extractor_text.py`)
+To prevent silent extraction errors, BOB pairs generative AI extraction with an independent domain rule engine:
+- **Dual-Engine Extraction**: For every document attachment, Gemini extracts the 7 canonical fields while an independent regex-based synonym dictionary parses the text against domain label variations (`"consignee"` / `"cnee"`, `"port of loading"` / `"load port"`, `"port of discharge"` / `"pod"`, `"gross weight"` / `"total weight"`).
+- **Cross-Engine Reconciliation**: `reconcile_extractions()` normalizes both outputs and checks for semantic divergence across entity text, container numbers, ports, and numeric weights.
+- **Stratified Confidence Scoring**: The `build_cross_check_confidence()` algorithm assigns calibrated confidence ratings per field:
+  - **`0.99` (High Confidence)**: Gemini and the synonym dictionary rule parser extract identical normalized values.
+  - **`0.85` (AI-Derived)**: Gemini successfully extracted a field from complex unstructured layout where keyword label patterns were absent.
+  - **`0.55` (Disagreement / Ambiguity Signal)**: Gemini and the rule parser extracted conflicting values. This serves as an explicit uncertainty signal to flag potential ambiguity for human operators.
+  - **`0.00` (Unresolved)**: The field is empty or contains placeholder tokens (`???`, `TBA`, `N/A`).
+
+---
+
+## 🧩 Challenges Faced
+
+**Silent AI fallback under missing credentials.** Our classifier and extractor are designed to gracefully fall back to rules/dictionary logic if Gemini is unavailable — but this meant a misconfigured environment variable could let the entire pipeline run silently on rules-only logic with no visible error. We fixed this by adding explicit startup logging that reports whether AI classification is genuinely active, plus a `decided_by` field tracked per-email so we can always verify how many decisions were actually made by AI versus fallback rules.
+
+**Rate limits at real dataset scale.** Processing the full 520-email dataset quickly hit free-tier Gemini rate limits. We built a resilient multi-key client pool with automatic key rotation and bounded cooldown cycles, plus per-email disk caching so an interrupted run resumes instead of re-processing everything from scratch.
+
+**Over-eager document extraction on unreadable files.** Our vision-based fallback for scanned/image-only documents initially tried to extract *some* answer even from genuinely corrupted or illegible files, rather than admitting it couldn't read them — causing missed escalations. We refined the extraction prompt and validation logic so the system correctly flags truly unreadable documents instead of guessing.
+
+**Inconsistent field labeling across documents.** Shipping Instructions and Bills of Lading frequently label the same field differently (e.g. "Port of Loading" vs. "Load Port"). We combined a synonym dictionary with AI-based extraction, using disagreement between the two as a signal for uncertainty rather than picking one silently.
+
+**Classification edge cases.** Some routine operational emails mention shipping terminology without being genuine document-comparison requests. Identifying and correcting this required analyzing real misclassifications and refining the classifier's decision boundary accordingly.
+
+---
+
+## 🗺️ Future Roadmap
+
+- Deploy the Streamlit operator dashboard as a standalone live service, rather than local-only, for real-time human review access
+- Expand OCR/vision handling to cover a wider range of scanned and degraded document conditions
+- Grow the field-synonym dictionary as more real-world label variants are encountered in production use
+- Add multi-language support for non-English shipping documents
+- Extend observability with dashboards tracking AI-vs-rule decision ratios and per-provider latency/error rates over time
+- Support additional document types beyond SI/BL — packing lists, commercial invoices, certificates of origin — as outlined in the hackathon's advanced-stage challenges
+
+---
+
 ## 📋 The 7 Canonical Comparison Fields
 
 The system extracts and verifies the 7 canonical shipment fields between the Shipping Instruction (SI) and draft Bill of Lading (BL):
